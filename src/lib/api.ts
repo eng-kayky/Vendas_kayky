@@ -191,7 +191,7 @@ export async function registrarVenda(v: {
       valor_cobrado: paraBanco(v.valor_cobrado),
       pagamento: v.pagamento,
       cliente: cliente || null,
-    }),
+    }).select('id'),
   )
 }
 
@@ -231,7 +231,8 @@ export async function finalizarDia(diaId: string): Promise<Snapshot> {
 }
 
 export async function reabrirDia(diaId: string) {
-  ok(await supabase.from('dias').update({ status: 'aberto' }).eq('id', diaId))
+  const r = ok(await supabase.from('dias').update({ status: 'aberto' }).eq('id', diaId).select('id'))
+  if (!r.length) throw new Error('Não foi possível reabrir o dia.')
 }
 
 export interface DiaHistorico {
