@@ -26,10 +26,10 @@ npm test
 
 ## 3. GitHub Pages
 
-1. Crie o repositório `empada-pudim` (público). Se usar outro nome, troque `base` em `vite.config.ts`.
+1. Repositório: `eng-kayky/Vendas_kayky` (público). Se mudar o nome, troque `base` em `vite.config.ts`.
 2. *Settings → Secrets and variables → Actions → Variables*: crie `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`.
 3. *Settings → Pages → Build and deployment → Source*: **GitHub Actions**.
-4. Cada push na `main` roda os testes, faz o build e publica em `https://<usuario>.github.io/empada-pudim/`.
+4. Cada push na `main` roda os testes, faz o build e publica em `https://eng-kayky.github.io/Vendas_kayky/`.
 5. No Supabase, em *Authentication → URL Configuration*, coloque esse endereço como **Site URL**.
 
 ## Regras principais

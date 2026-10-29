@@ -5,7 +5,7 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // Nome do repositório no GitHub: o Pages serve o site em /<repo>/
-const base = '/empada-pudim/'
+const base = '/Vendas_kayky/'
 
 export default defineConfig({
   base,
