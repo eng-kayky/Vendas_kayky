@@ -16,12 +16,13 @@ const vendas = [
   { item_dia_id: 'p', quantidade: 5, valor_cobrado: 2400, pagamento: 'dinheiro' as const },
   { item_dia_id: 'u', quantidade: 2, valor_cobrado: 1600, pagamento: 'cartao' as const },
   { item_dia_id: 'u', quantidade: 7, valor_cobrado: 5200, pagamento: 'dinheiro' as const },
+  { item_dia_id: 'f', quantidade: 3, valor_cobrado: 1800, pagamento: 'fiado' as const },
 ]
 
 export default function DevImagem() {
   const ref = useRef<HTMLDivElement>(null)
   const [png, setPng] = useState<string | null>(null)
-  const dados = imagemDoSnapshot(criarSnapshot('2026-10-29', calcularResumo(itens, vendas), 24500, new Date().toISOString()))
+  const dados = imagemDoSnapshot(criarSnapshot('2026-10-29', calcularResumo(itens, vendas), 24500, new Date().toISOString(), 3000))
 
   useEffect(() => {
     if (ref.current) gerarPng(ref.current).then(setPng)

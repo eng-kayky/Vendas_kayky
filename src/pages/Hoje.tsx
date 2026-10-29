@@ -65,6 +65,13 @@ function Cabecalho({ data, aberto }: { data: string; aberto: DiaCompleto | null 
         <div className="flex items-center gap-2">
           {aberto && <Pilula />}
           <Link
+            to="/fiado"
+            className="grid size-11 place-items-center rounded-xl border border-borda bg-cartao"
+            aria-label="Fiado"
+          >
+            <Icone nome="carteira" />
+          </Link>
+          <Link
             to="/produtos"
             className="grid size-11 place-items-center rounded-xl border border-borda bg-cartao"
             aria-label="Produtos"
@@ -211,6 +218,12 @@ function DiaAberto({ dia, onMudou }: { dia: DiaCompleto; onMudou: () => void }) 
                   <dd className="font-bold">{reais(v)}</dd>
                 </div>
               ))}
+              {resumo.pagamentos.fiado > 0 && (
+                <div className="flex justify-between">
+                  <dt className="text-alerta">Fiado (a receber)</dt>
+                  <dd className="font-bold text-alerta">{reais(resumo.pagamentos.fiado)}</dd>
+                </div>
+              )}
             </dl>
           </div>
           <div className="cartao hidden p-6 md:block">

@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 import { deBanco, paraBanco } from './dinheiro'
 import { hojeBelem } from './datas'
-import { calcularResumo, criarSnapshot, type Pagamento, type Snapshot } from './resumo'
+import { calcularResumo, criarSnapshot, type FormaRecebimento, type Pagamento, type Snapshot } from './resumo'
 
 export interface Dia {
   id: string
@@ -48,7 +48,13 @@ export function mensagemErro(e: unknown): string {
   if (!navigator.onLine) return 'Sem conexão com a internet. Nada foi salvo.'
   if (err?.code === '23505')
     return err.message?.includes('produtos') ? 'Já existe um produto com esse nome.' : 'Já existe um registro para esse dia.'
-  if (err?.message?.includes('cliente_obrigatorio_no_pix')) return 'No Pix, o nome do cliente é obrigatório.'
+  if (err?.message?.includes('cliente_obrigatorio_no_pix')) return 'No Pix e no fiado, o nome do cliente é obrigatório.'
+  if (err?.message?.includes('vendas_pagamento_check'))
+    return 'O banco ainda não aceita fiado. Rode o arquivo 0002_fiado.sql no SQL Editor do Supabase.'
+  if (err?.code === '42P01' || err?.code === 'PGRST205')
+    return 'O banco ainda não tem a parte de fiado. Rode o arquivo 0002_fiado.sql no SQL Editor do Supabase.'
+  if (err?.code === '23503' && err.message?.includes('fiado'))
+    return 'Essa venda fiado já foi recebida. Desfaça o recebimento na tela Fiado antes.'
   if (err?.message?.includes('Failed to fetch')) return 'Não foi possível falar com o servidor. Nada foi salvo.'
   return err?.message ?? 'Erro inesperado.'
 }
@@ -229,7 +235,8 @@ export async function finalizarDia(diaId: string, gasto: number | null): Promise
   if (!atual) throw new Error('Dia não encontrado.')
   if (atual.dia.status === 'fechado') throw new Error('Este dia já está fechado.')
   const resumo = calcularResumo(atual.itens, atual.vendas)
-  const snapshot = criarSnapshot(atual.dia.data, resumo, gasto, new Date().toISOString())
+  const recebido = await fiadoRecebidoNoDia(atual.dia.data)
+  const snapshot = criarSnapshot(atual.dia.data, resumo, gasto, new Date().toISOString(), recebido)
   const r = ok(
     await supabase.from('dias').update({ status: 'fechado', snapshot }).eq('id', diaId).eq('status', 'aberto').select('fechado_em'),
   )
@@ -325,6 +332,64 @@ export async function salvarProduto(id: string, campos: { nome?: string; preco?:
   if (campos.ativo !== undefined) dados.ativo = campos.ativo
   const r = ok(await supabase.from('produtos').update(dados).eq('id', id).select('id'))
   if (!r.length) throw new Error('Produto não encontrado.')
+}
+
+// ---------- Fiado ----------
+
+export interface Fiado {
+  venda_id: string
+  cliente: string
+  produto: string
+  quantidade: number
+  valor: number // centavos
+  data: string // dia da venda
+  criado_em: string
+  recebimento: { id: string; valor: number; pagamento: FormaRecebimento; data: string } | null
+}
+
+/** Vendas fiado (as em aberto primeiro, depois as recebidas mais recentes). */
+export async function listarFiados(): Promise<Fiado[]> {
+  const linhas = ok(
+    await supabase
+      .from('vendas')
+      .select('id, quantidade, valor_cobrado, cliente, criado_em, itens_dia(nome, dias(data)), fiado_pagamentos(id, valor, pagamento, data)')
+      .eq('pagamento', 'fiado')
+      .order('criado_em', { ascending: false })
+      .limit(500),
+  ) as unknown as Linha[]
+  return linhas.map((v) => {
+    const item = v.itens_dia as { nome: string; dias: { data: string } | null } | null
+    const pg = v.fiado_pagamentos as Linha | Linha[] | null
+    const rec = Array.isArray(pg) ? pg[0] : pg
+    return {
+      venda_id: v.id as string,
+      cliente: ((v.cliente as string) ?? '').trim(),
+      produto: item?.nome ?? '—',
+      quantidade: v.quantidade as number,
+      valor: deBanco(v.valor_cobrado as string),
+      data: item?.dias?.data ?? (v.criado_em as string).slice(0, 10),
+      criado_em: v.criado_em as string,
+      recebimento: rec
+        ? { id: rec.id as string, valor: deBanco(rec.valor as string), pagamento: rec.pagamento as FormaRecebimento, data: rec.data as string }
+        : null,
+    }
+  })
+}
+
+export async function receberFiado(f: Fiado, pagamento: FormaRecebimento) {
+  ok(await supabase.from('fiado_pagamentos').insert({ venda_id: f.venda_id, valor: paraBanco(f.valor), pagamento }).select('id'))
+}
+
+export async function desfazerRecebimento(id: string) {
+  const r = ok(await supabase.from('fiado_pagamentos').delete().eq('id', id).select('id'))
+  if (!r.length) throw new Error('Recebimento não encontrado.')
+}
+
+/** Soma dos fiados pagos nesse dia (entra no caixa do dia, não no faturamento). */
+export async function fiadoRecebidoNoDia(data: string): Promise<number> {
+  const r = await supabase.from('fiado_pagamentos').select('valor').eq('data', data)
+  if (r.error) return 0 // banco sem a migração de fiado: nada recebido
+  return (r.data ?? []).reduce((s, p) => s + deBanco(p.valor as string), 0)
 }
 
 // ---------- Produtos do dia aberto ----------

@@ -125,7 +125,13 @@ export function Confirmar({
 
 export function Abas() {
   const caminho = useLocation().pathname
-  const atual = caminho.startsWith('/historico') ? 'historico' : caminho.startsWith('/produtos') ? 'produtos' : 'hoje'
+  const atual = caminho.startsWith('/historico')
+    ? 'historico'
+    : caminho.startsWith('/produtos')
+      ? 'produtos'
+      : caminho.startsWith('/fiado')
+        ? 'fiado'
+        : 'hoje'
   const cls = (ativo: boolean) =>
     `btn min-h-11 rounded-full px-5 ${ativo ? 'bg-destaque text-fundo' : 'border border-borda text-texto hover:border-destaque/60'}`
   return (
@@ -135,6 +141,9 @@ export function Abas() {
       </Link>
       <Link to="/historico" className={cls(atual === 'historico')}>
         Histórico
+      </Link>
+      <Link to="/fiado" className={cls(atual === 'fiado')}>
+        Fiado
       </Link>
       <Link to="/produtos" className={cls(atual === 'produtos')}>
         Produtos
@@ -182,7 +191,13 @@ const caminhos: Record<string, ReactNode> = {
       <path d="M3 8v8l9 5 9-5V8M12 13v8" />
     </>
   ),
-  lapis: <path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />,
+  carteira: (
+    <>
+      <rect x="2" y="6" width="20" height="14" rx="2" />
+      <path d="M2 10h20M16 15h2M6 6V4h12v2" />
+    </>
+  ),
+  lapis:<path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />,
   pessoa: (
     <>
       <circle cx="12" cy="8" r="4" />

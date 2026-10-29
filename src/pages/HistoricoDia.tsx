@@ -62,7 +62,11 @@ export default function HistoricoDia() {
           <L r="Descontos" v={reais(-d.descontos)} />
           <L r="Faturamento líquido" v={reais(d.liquido)} />
           <L r="Gasto com material" v={d.gasto === null ? 'Não teve (N/A)' : reais(-d.gasto)} />
-          <L r="Pix · Dinheiro · Cartão" v={`${reais(d.pagamentos.pix)} · ${reais(d.pagamentos.dinheiro)} · ${reais(d.pagamentos.cartao)}`} />
+          <L r="Pix" v={reais(d.pagamentos.pix)} />
+          <L r="Dinheiro" v={reais(d.pagamentos.dinheiro)} />
+          <L r="Cartão" v={reais(d.pagamentos.cartao)} />
+          {d.pagamentos.fiado > 0 && <L r="Vendido fiado" v={reais(d.pagamentos.fiado)} />}
+          {d.fiado_recebido > 0 && <L r="Fiado recebido no dia" v={reais(d.fiado_recebido)} />}
           <L r="Sobra" v={`${d.sobra_unidades} unidades`} />
         </section>
 

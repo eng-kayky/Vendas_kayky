@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
-import { carregarDiaPorId, finalizarDia, mensagemErro } from '../lib/api'
+import { carregarDiaPorId, fiadoRecebidoNoDia, finalizarDia, mensagemErro } from '../lib/api'
 import { dataCurta, diaDaSemana } from '../lib/datas'
 import { lerReais, porcentagem, reais } from '../lib/dinheiro'
 import { calcularLucro, calcularResumo } from '../lib/resumo'
@@ -12,6 +12,8 @@ export default function Finalizar() {
   const nav = useNavigate()
   const online = useOnline()
   const { dados, erro: erroCarga, carregando } = useCarregar(() => carregarDiaPorId(diaId), [diaId], 20000)
+  const { dados: recebidoDia } = useCarregar(async () => (dados ? fiadoRecebidoNoDia(dados.dia.data) : 0), [dados?.dia.data])
+  const fiadoRecebido = recebidoDia ?? 0
   const [gastoTexto, setGastoTexto] = useState('')
   const [semGasto, setSemGasto] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
@@ -61,20 +63,29 @@ export default function Finalizar() {
           </div>
         </section>
 
-        <section className="cartao grid grid-cols-3 divide-x divide-borda py-4 text-center">
+        <section className="cartao grid grid-cols-2 gap-y-3 py-4 text-center sm:grid-cols-4">
           {(
             [
-              ['Pix', r.pagamentos.pix],
-              ['Dinheiro', r.pagamentos.dinheiro],
-              ['Cartão', r.pagamentos.cartao],
+              ['Pix', r.pagamentos.pix, ''],
+              ['Dinheiro', r.pagamentos.dinheiro, ''],
+              ['Cartão', r.pagamentos.cartao, ''],
+              ['Fiado', r.pagamentos.fiado, r.pagamentos.fiado ? 'text-alerta' : ''],
             ] as const
-          ).map(([rotulo, v]) => (
+          ).map(([rotulo, v, cor]) => (
             <div key={rotulo} className="px-1">
               <p className="rotulo">{rotulo}</p>
-              <p className="mt-1 text-lg font-bold">{reais(v)}</p>
+              <p className={`mt-1 text-lg font-bold ${cor}`}>{reais(v)}</p>
             </div>
           ))}
         </section>
+        {r.pagamentos.fiado > 0 && (
+          <p className="px-1 text-sm text-sec">O fiado conta no faturamento de hoje e fica na tela Fiado até o cliente pagar.</p>
+        )}
+        {fiadoRecebido > 0 && (
+          <Aviso tipo="info">
+            Hoje entrou {reais(fiadoRecebido)} de fiado de dias anteriores. Esse valor vai para o caixa, não para o faturamento de hoje.
+          </Aviso>
+        )}
 
         {/* Gasto com material: informado só aqui, no fechamento */}
         <section className="cartao space-y-3 p-5">

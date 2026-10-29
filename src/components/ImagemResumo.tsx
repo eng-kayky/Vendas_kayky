@@ -163,11 +163,21 @@ const ImagemResumo = forwardRef<HTMLDivElement, { d: DadosImagem }>(function Ima
             ['Pix', d.pagamentos.pix],
             ['Dinheiro', d.pagamentos.dinheiro],
             ['Cartão', d.pagamentos.cartao],
+            ...(d.pagamentos.fiado > 0 ? ([['Fiado', d.pagamentos.fiado]] as const) : []),
           ] as const
         ).map(([t, v]) => (
-          <div key={t} style={{ flex: 1 }}>
-            <div style={{ fontSize: 24, color: C.sec }}>{t}</div>
-            <div style={{ fontSize: 36, fontWeight: 800, whiteSpace: 'nowrap' }}>{reais(v)}</div>
+          <div key={t} style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 24, color: t === 'Fiado' ? C.alerta : C.sec }}>{t}</div>
+            <div
+              style={{
+                fontSize: d.pagamentos.fiado > 0 ? 30 : 36,
+                fontWeight: 800,
+                whiteSpace: 'nowrap',
+                color: t === 'Fiado' ? C.alerta : C.texto,
+              }}
+            >
+              {reais(v)}
+            </div>
           </div>
         ))}
       </div>
@@ -180,7 +190,7 @@ const ImagemResumo = forwardRef<HTMLDivElement, { d: DadosImagem }>(function Ima
             : `${-d.sobra_unidades} unidades vendidas acima do produzido`}
         </span>
         <span>
-          {d.vendido} de {d.produzido} unidades vendidas
+          {d.fiado_recebido > 0 ? `Fiado recebido no dia: ${reais(d.fiado_recebido)}` : `${d.vendido} de ${d.produzido} unidades vendidas`}
         </span>
       </div>
     </div>

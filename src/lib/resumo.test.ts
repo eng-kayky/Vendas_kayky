@@ -51,7 +51,15 @@ describe('calcularResumo', () => {
   })
 
   it('soma por forma de pagamento', () => {
-    expect(r.pagamentos).toEqual({ pix: 21000, dinheiro: 12000, cartao: 4000 })
+    expect(r.pagamentos).toEqual({ pix: 21000, dinheiro: 12000, cartao: 4000, fiado: 0 })
+  })
+
+  it('fiado entra no faturamento do dia da venda e fica a receber', () => {
+    const r2 = calcularResumo(itens, [...vendas, { item_dia_id: 'pudim', quantidade: 2, valor_cobrado: 1600, pagamento: 'fiado' }])
+    expect(r2.totais.liquido).toBe(38600)
+    expect(r2.pagamentos.fiado).toBe(1600)
+    expect(r2.itens[2].vendido).toBe(11)
+    expect(r2.itens[2].restante).toBe(9)
   })
 
   it('venda acima do estoque deixa o restante negativo', () => {
@@ -96,7 +104,7 @@ describe('lançamento de dia anterior por resumo', () => {
   ]
 
   it('monta o snapshot com sobra, lucro e gasto', () => {
-    const s = criarSnapshotLancamento('2026-10-25', linhas, { pix: 12000, dinheiro: 6000, cartao: 1600 }, 8000, 'x')
+    const s = criarSnapshotLancamento('2026-10-25', linhas, { pix: 12000, dinheiro: 6000, cartao: 1600, fiado: 0 }, 8000, 'x')
     expect(s.tipo).toBe('resumo')
     expect(s.totais.liquido).toBe(196)
     expect(s.totais.lucro).toBe(116)
@@ -109,8 +117,9 @@ describe('lançamento de dia anterior por resumo', () => {
 
   it('pagamentos são opcionais, mas se informados têm de bater', () => {
     expect(validarLancamento(linhas, null)).toBeNull()
-    expect(validarLancamento(linhas, { pix: 12000, dinheiro: 6000, cartao: 1600 })).toBeNull()
-    expect(validarLancamento(linhas, { pix: 12000, dinheiro: 0, cartao: 0 })).toMatch(/diferente/)
+    expect(validarLancamento(linhas, { pix: 12000, dinheiro: 6000, cartao: 1600, fiado: 0 })).toBeNull()
+    expect(validarLancamento(linhas, { pix: 12000, dinheiro: 0, cartao: 0, fiado: 7600 })).toBeNull()
+    expect(validarLancamento(linhas, { pix: 12000, dinheiro: 0, cartao: 0, fiado: 0 })).toMatch(/diferente/)
   })
 
   it('recusa vender mais do que tinha e lançamento vazio', () => {
@@ -131,6 +140,18 @@ describe('snapshot', () => {
     expect(img.lucro).toBe(12450)
     expect(img.liquido).toBe(37000)
     expect(img.produzido).toBe(90)
+  })
+
+  it('guarda o fiado recebido no dia e lê snapshots antigos sem fiado', () => {
+    const s = criarSnapshot('2026-10-29', r, null, 'x', 3000)
+    expect(s.fiado_recebido).toBe(30)
+    expect(imagemDoSnapshot(JSON.parse(JSON.stringify(s))).fiado_recebido).toBe(3000)
+    const antigo = JSON.parse(JSON.stringify(s))
+    delete antigo.fiado_recebido
+    delete antigo.pagamentos.fiado
+    const img = imagemDoSnapshot(antigo)
+    expect(img.pagamentos.fiado).toBe(0)
+    expect(img.fiado_recebido).toBe(0)
   })
 
   it('sem gasto (N/A) grava null', () => {

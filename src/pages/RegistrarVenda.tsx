@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { carregarHoje, clientesRecentes, mensagemErro, registrarVenda, type DiaCompleto } from '../lib/api'
 import { lerReais, numeroBR, porcentagem, reais } from '../lib/dinheiro'
-import { calcularResumo, descontoVenda, PAGAMENTOS, type Pagamento } from '../lib/resumo'
+import { calcularResumo, descontoVenda, exigeCliente, PAGAMENTOS, type Pagamento } from '../lib/resumo'
 import { useOnline } from '../hooks'
 import { Aviso, Carregando, Confirmar, Icone, Pagina, Rodape, Topo } from '../components/ui'
 
@@ -51,7 +51,7 @@ export default function RegistrarVenda() {
   const tabela = qtd * linha.preco
   const valor = lerReais(cobrado)
   const desconto = valor === null ? 0 : descontoVenda(qtd, linha.preco, valor)
-  const clienteObrigatorio = pagamento === 'pix'
+  const clienteObrigatorio = exigeCliente(pagamento)
   const faltaCliente = clienteObrigatorio && cliente.trim() === ''
   const excede = qtd > linha.restante
   const podeEnviar = online && valor !== null && !faltaCliente && qtd > 0 && !enviando
@@ -193,12 +193,16 @@ export default function RegistrarVenda() {
         <section className="cartao space-y-3 p-4">
           <fieldset>
             <legend className="rotulo mb-2">Pagamento</legend>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-4 gap-2">
               {PAGAMENTOS.map((p) => (
                 <label
                   key={p.valor}
-                  className={`btn min-h-12 cursor-pointer border text-base ${
-                    pagamento === p.valor ? 'border-destaque bg-destaque text-fundo' : 'border-borda text-texto'
+                  className={`btn min-h-12 cursor-pointer border px-1 text-sm sm:text-base ${
+                    pagamento === p.valor
+                      ? p.valor === 'fiado'
+                        ? 'border-alerta bg-alerta text-fundo'
+                        : 'border-destaque bg-destaque text-fundo'
+                      : 'border-borda text-texto'
                   }`}
                 >
                   <input
@@ -220,7 +224,11 @@ export default function RegistrarVenda() {
               <label htmlFor="cliente" className="rotulo">
                 Cliente
               </label>
-              <span className="text-xs text-claro">Nome no comprovante · {clienteObrigatorio ? 'obrigatório no Pix' : 'opcional'}</span>
+              <span className="text-xs text-claro">
+                {pagamento === 'fiado'
+                  ? 'Quem vai pagar depois · obrigatório'
+                  : `Nome no comprovante · ${clienteObrigatorio ? 'obrigatório no Pix' : 'opcional'}`}
+              </span>
             </div>
             <div
               className={`flex min-h-12 items-center gap-2 rounded-xl border bg-fundo/60 px-3 focus-within:ring-2 focus-within:ring-destaque/30 ${

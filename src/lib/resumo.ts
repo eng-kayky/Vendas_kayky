@@ -1,13 +1,23 @@
 // Regras de cálculo do dia. Funções puras, tudo em centavos.
 // O dia controla só vendas; o gasto com material é informado ao finalizar.
 
-export type Pagamento = 'pix' | 'dinheiro' | 'cartao'
+// Fiado conta no faturamento do dia da venda e fica "a receber" até o cliente pagar
+export type Pagamento = 'pix' | 'dinheiro' | 'cartao' | 'fiado'
+export type FormaRecebimento = Exclude<Pagamento, 'fiado'>
 
 export const PAGAMENTOS: { valor: Pagamento; rotulo: string }[] = [
   { valor: 'pix', rotulo: 'Pix' },
   { valor: 'dinheiro', rotulo: 'Dinheiro' },
   { valor: 'cartao', rotulo: 'Cartão' },
+  { valor: 'fiado', rotulo: 'Fiado' },
 ]
+
+export const FORMAS_RECEBIMENTO = PAGAMENTOS.filter((p) => p.valor !== 'fiado') as { valor: FormaRecebimento; rotulo: string }[]
+
+/** Pix e fiado exigem o nome do cliente. */
+export const exigeCliente = (p: Pagamento) => p === 'pix' || p === 'fiado'
+
+export const semPagamentos = (): Record<Pagamento, number> => ({ pix: 0, dinheiro: 0, cartao: 0, fiado: 0 })
 
 export interface ItemCalc {
   id: string
@@ -55,7 +65,7 @@ export function estoqueBaixo(restante: number, produzido: number): boolean {
 }
 
 export function calcularResumo(itens: ItemCalc[], vendas: VendaCalc[]): Resumo {
-  const pagamentos: Record<Pagamento, number> = { pix: 0, dinheiro: 0, cartao: 0 }
+  const pagamentos = semPagamentos()
   const porItem = new Map<string, { vendido: number; faturado: number }>()
 
   for (const v of vendas) {
@@ -112,14 +122,28 @@ export interface Snapshot {
     margem: number | null
     sobra_unidades: number
   }
-  pagamentos: Record<Pagamento, number>
+  pagamentos: Record<Pagamento, number> // fiado = vendido fiado nesse dia (a receber)
+  fiado_recebido?: number // fiados de dias anteriores pagos nesse dia (entrou no caixa, não no faturamento)
   fechado_em: string
 }
 
 const r = (centavos: number) => centavos / 100
 const c = (reais: number) => Math.round(reais * 100)
 
-export function criarSnapshot(data: string, resumo: Resumo, gasto: number | null, fechadoEm: string): Snapshot {
+const pagamentosEmReais = (p: Record<Pagamento, number>): Record<Pagamento, number> => ({
+  pix: r(p.pix),
+  dinheiro: r(p.dinheiro),
+  cartao: r(p.cartao),
+  fiado: r(p.fiado),
+})
+
+export function criarSnapshot(
+  data: string,
+  resumo: Resumo,
+  gasto: number | null,
+  fechadoEm: string,
+  fiadoRecebido = 0,
+): Snapshot {
   const t = resumo.totais
   const { lucro, margem } = calcularLucro(t.liquido, gasto)
   return {
@@ -141,11 +165,8 @@ export function criarSnapshot(data: string, resumo: Resumo, gasto: number | null
       margem: margem === null ? null : Math.round(margem * 10000) / 10000,
       sobra_unidades: t.sobra_unidades,
     },
-    pagamentos: {
-      pix: r(resumo.pagamentos.pix),
-      dinheiro: r(resumo.pagamentos.dinheiro),
-      cartao: r(resumo.pagamentos.cartao),
-    },
+    pagamentos: pagamentosEmReais(resumo.pagamentos),
+    fiado_recebido: r(fiadoRecebido),
     fechado_em: fechadoEm,
   }
 }
@@ -167,7 +188,7 @@ export function validarLancamento(linhas: LinhaLancamento[], pagamentos: Record<
   }
   if (pagamentos) {
     const total = linhas.reduce((s, l) => s + l.faturado, 0)
-    const pago = pagamentos.pix + pagamentos.dinheiro + pagamentos.cartao
+    const pago = pagamentos.pix + pagamentos.dinheiro + pagamentos.cartao + pagamentos.fiado
     if (pago !== total) return `A soma por pagamento (${(pago / 100).toFixed(2).replace('.', ',')}) é diferente do total dos produtos (${(total / 100).toFixed(2).replace('.', ',')}).`
   }
   return null
@@ -186,7 +207,7 @@ export function criarSnapshotLancamento(
     const produzido = l.produzido ?? l.vendido
     return { nome: l.nome, produzido, vendido: l.vendido, sobra: produzido - l.vendido, faturado: r(l.faturado) }
   })
-  const p = pagamentos ?? { pix: 0, dinheiro: 0, cartao: 0 }
+  const p = pagamentos ?? semPagamentos()
   return {
     data,
     tipo: 'resumo',
@@ -201,7 +222,7 @@ export function criarSnapshotLancamento(
       margem: margem === null ? null : Math.round(margem * 10000) / 10000,
       sobra_unidades: itens.reduce((s, i) => s + i.sobra, 0),
     },
-    pagamentos: { pix: r(p.pix), dinheiro: r(p.dinheiro), cartao: r(p.cartao) },
+    pagamentos: pagamentosEmReais(p),
     fechado_em: fechadoEm,
   }
 }
@@ -223,7 +244,14 @@ export function imagemDoSnapshot(s: Snapshot) {
     lucro: c(s.totais.lucro),
     margem: s.totais.margem,
     sobra_unidades: s.totais.sobra_unidades,
-    pagamentos: { pix: c(s.pagamentos.pix), dinheiro: c(s.pagamentos.dinheiro), cartao: c(s.pagamentos.cartao) },
+    // Dias fechados antes do fiado existir não têm esses campos
+    pagamentos: {
+      pix: c(s.pagamentos.pix),
+      dinheiro: c(s.pagamentos.dinheiro),
+      cartao: c(s.pagamentos.cartao),
+      fiado: c(s.pagamentos.fiado ?? 0),
+    },
+    fiado_recebido: c(s.fiado_recebido ?? 0),
   }
 }
 

@@ -11,7 +11,7 @@ import {
 } from '../lib/api'
 import { dataLonga, hojeBelem } from '../lib/datas'
 import { lerReais, numeroBR, porcentagem, reais } from '../lib/dinheiro'
-import { calcularLucro, criarSnapshotLancamento, validarLancamento, type LinhaLancamento, type Pagamento } from '../lib/resumo'
+import { calcularLucro, criarSnapshotLancamento, PAGAMENTOS, validarLancamento, type LinhaLancamento, type Pagamento } from '../lib/resumo'
 import { useOnline } from '../hooks'
 import { Aviso, Carregando, Confirmar, Pagina, Rodape, Topo } from '../components/ui'
 
@@ -25,11 +25,7 @@ interface Linha {
   recebeuEditado: boolean
 }
 
-const PG: { valor: Pagamento; rotulo: string }[] = [
-  { valor: 'pix', rotulo: 'Pix' },
-  { valor: 'dinheiro', rotulo: 'Dinheiro' },
-  { valor: 'cartao', rotulo: 'Cartão' },
-]
+const PG = PAGAMENTOS
 
 const inteiro = (s: string) => (s.trim() === '' ? null : /^\d+$/.test(s.trim()) ? Number(s.trim()) : NaN)
 
@@ -47,7 +43,7 @@ export default function LancarDia() {
   const online = useOnline()
   const [data, setData] = useState(ontem())
   const [linhas, setLinhas] = useState<Linha[] | null>(null)
-  const [pag, setPag] = useState<Record<Pagamento, string>>({ pix: '', dinheiro: '', cartao: '' })
+  const [pag, setPag] = useState<Record<Pagamento, string>>({ pix: '', dinheiro: '', cartao: '', fiado: '' })
   const [gastoTexto, setGastoTexto] = useState('')
   const [semGasto, setSemGasto] = useState(false)
   const [outro, setOutro] = useState('')
@@ -86,8 +82,10 @@ export default function LancarDia() {
         }))
         const nomes = new Set(lancadas.map((l) => l.nome))
         setLinhas([...lancadas, ...base.filter((b) => !nomes.has(b.nome))])
-        const temPag = s.pagamentos.pix + s.pagamentos.dinheiro + s.pagamentos.cartao > 0
-        if (temPag) setPag({ pix: numeroBR(s.pagamentos.pix * 100), dinheiro: numeroBR(s.pagamentos.dinheiro * 100), cartao: numeroBR(s.pagamentos.cartao * 100) })
+        const fiado = s.pagamentos.fiado ?? 0
+        const temPag = s.pagamentos.pix + s.pagamentos.dinheiro + s.pagamentos.cartao + fiado > 0
+        const br = (v: number) => (v ? numeroBR(Math.round(v * 100)) : '')
+        if (temPag) setPag({ pix: br(s.pagamentos.pix), dinheiro: br(s.pagamentos.dinheiro), cartao: br(s.pagamentos.cartao), fiado: br(fiado) })
         if (s.totais.gasto === null) setSemGasto(true)
         else setGastoTexto(numeroBR(Math.round(s.totais.gasto * 100)))
       } catch (e) {
@@ -245,7 +243,8 @@ export default function LancarDia() {
 
           <section className="cartao space-y-2 p-4">
             <p className="rotulo">Recebido por (opcional)</p>
-            <div className="grid grid-cols-3 gap-2">
+            <p className="text-xs text-sec">Fiado não aparece na tela Fiado para cobrar: o lançamento por resumo não tem o nome do cliente.</p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {PG.map((p) => (
                 <Campo key={p.valor} id={`pg-${p.valor}`} rotulo={p.rotulo} valor={pag[p.valor]} onChange={(v) => setPag({ ...pag, [p.valor]: v })} />
               ))}
