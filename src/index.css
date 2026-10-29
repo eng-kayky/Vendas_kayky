@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@theme {
+  --color-fundo: #060C22;
+  --color-cartao: #0D1735;
+  --color-borda: #1B2A5C;
+  --color-destaque: #4B8DFF;
+  --color-claro: #8AB4FF;
+  --color-texto: #EEF2FF;
+  --color-sec: #9DB0DC;
+  --color-alerta: #FF9AA8;
+  --color-positivo: #3DDC97;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-fundo text-texto font-sans antialiased;
+    background-image: radial-gradient(120% 60% at 50% 0%, #0B1638 0%, #060C22 70%);
+    background-attachment: fixed;
+    min-height: 100dvh;
+    overflow-x: hidden;
+  }
+  input, button, select {
+    font: inherit;
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@utility cartao {
+  @apply rounded-2xl border border-borda bg-cartao;
+}
+@utility rotulo {
+  @apply text-[11px] font-semibold uppercase tracking-[0.12em] text-sec;
+}
+@utility campo {
+  @apply min-h-12 w-full rounded-xl border border-borda bg-fundo/60 px-3 text-lg font-semibold text-texto outline-none transition focus:border-destaque focus:ring-2 focus:ring-destaque/30;
+}
+@utility btn {
+  @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 font-bold transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
+}
+@utility btn-primario {
+  @apply btn bg-destaque text-fundo hover:brightness-110;
+}
+@utility btn-secundario {
+  @apply btn border border-borda bg-cartao text-texto hover:border-destaque/60;
+}
+@utility btn-perigo {
+  @apply btn border border-alerta/40 bg-alerta/10 text-alerta hover:bg-alerta/20;
+}
