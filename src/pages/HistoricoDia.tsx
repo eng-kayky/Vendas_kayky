@@ -61,9 +61,9 @@ export default function HistoricoDia() {
           <L r="Faturamento bruto" v={reais(d.bruto)} />
           <L r="Descontos" v={reais(-d.descontos)} />
           <L r="Faturamento líquido" v={reais(d.liquido)} />
-          <L r="Custo da produção" v={reais(-d.custo)} />
+          <L r="Gasto com material" v={d.gasto === null ? 'Não teve (N/A)' : reais(-d.gasto)} />
           <L r="Pix · Dinheiro · Cartão" v={`${reais(d.pagamentos.pix)} · ${reais(d.pagamentos.dinheiro)} · ${reais(d.pagamentos.cartao)}`} />
-          <L r="Sobra" v={`${d.sobra_unidades} un. (${reais(d.sobra_custo)})`} />
+          <L r="Sobra" v={`${d.sobra_unidades} unidades`} />
         </section>
 
         <section className="cartao overflow-x-auto p-4">
@@ -73,7 +73,6 @@ export default function HistoricoDia() {
                 <th className="py-2 font-semibold">Produto</th>
                 <th className="py-2 text-right font-semibold">Vend.</th>
                 <th className="py-2 text-right font-semibold">Faturado</th>
-                <th className="py-2 text-right font-semibold">Lucro</th>
               </tr>
             </thead>
             <tbody>
@@ -83,8 +82,7 @@ export default function HistoricoDia() {
                   <td className="py-2 text-right">
                     {i.vendido}/{i.produzido}
                   </td>
-                  <td className="py-2 text-right">{reais(i.faturado)}</td>
-                  <td className={`py-2 text-right font-bold ${i.lucro < 0 ? 'text-alerta' : 'text-positivo'}`}>{reais(i.lucro)}</td>
+                  <td className="py-2 text-right font-bold">{reais(i.faturado)}</td>
                 </tr>
               ))}
             </tbody>

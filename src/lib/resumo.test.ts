@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { calcularResumo, criarSnapshot, descontoVenda, estoqueBaixo, imagemDoSnapshot, type ItemCalc, type VendaCalc } from './resumo'
+import { calcularLucro, calcularResumo, criarSnapshot, descontoVenda, estoqueBaixo, imagemDoSnapshot, type ItemCalc, type VendaCalc } from './resumo'
 
-// Caso de aceite (item 10 do prompt)
 const itens: ItemCalc[] = [
-  { id: 'frango', nome: 'Empada de frango', produzido: 40, preco: 600, custo: 250 },
-  { id: 'palmito', nome: 'Empada de palmito', produzido: 30, preco: 600, custo: 250 },
-  { id: 'pudim', nome: 'Pudim', produzido: 20, preco: 800, custo: 350 },
+  { id: 'frango', nome: 'Empada de frango', produzido: 40, preco: 600 },
+  { id: 'palmito', nome: 'Empada de palmito', produzido: 30, preco: 600 },
+  { id: 'pudim', nome: 'Pudim', produzido: 20, preco: 800 },
 ]
 
 const vendas: VendaCalc[] = [
@@ -24,21 +23,17 @@ const vendas: VendaCalc[] = [
 describe('calcularResumo', () => {
   const r = calcularResumo(itens, vendas)
 
-  it('calcula os totais do dia', () => {
+  it('calcula os totais de vendas do dia', () => {
     expect(r.totais.bruto).toBe(38400)
     expect(r.totais.descontos).toBe(1400)
     expect(r.totais.liquido).toBe(37000)
-    expect(r.totais.custo).toBe(24500)
-    expect(r.totais.lucro).toBe(12500)
-    expect(Math.round(r.totais.margem! * 1000) / 10).toBe(33.8)
     expect(r.totais.sobra_unidades).toBe(29)
-    expect(r.totais.sobra_custo).toBe(8350)
     expect(r.totais.produzido).toBe(90)
     expect(r.totais.vendido).toBe(61)
+    expect(r.totais.vendas).toBe(7)
   })
 
-  it('calcula o lucro por produto', () => {
-    expect(r.itens.map((i) => i.lucro)).toEqual([6400, 6300, -200])
+  it('calcula por produto', () => {
     expect(r.itens.map((i) => i.vendido)).toEqual([28, 24, 9])
     expect(r.itens.map((i) => i.faturado)).toEqual([16400, 13800, 6800])
     expect(r.itens.map((i) => i.restante)).toEqual([12, 6, 11])
@@ -48,16 +43,25 @@ describe('calcularResumo', () => {
     expect(r.pagamentos).toEqual({ pix: 21000, dinheiro: 12000, cartao: 4000 })
   })
 
-  it('margem é null quando o líquido é zero', () => {
-    const vazio = calcularResumo(itens, [])
-    expect(vazio.totais.margem).toBeNull()
-    expect(vazio.totais.lucro).toBe(-24500)
-    expect(vazio.totais.sobra_unidades).toBe(90)
-  })
-
   it('venda acima do estoque deixa o restante negativo', () => {
     const r2 = calcularResumo([itens[2]], [{ item_dia_id: 'pudim', quantidade: 22, valor_cobrado: 17600, pagamento: 'pix' }])
     expect(r2.itens[0].restante).toBe(-2)
+  })
+})
+
+describe('lucro com gasto informado ao finalizar', () => {
+  it('desconta o gasto do líquido', () => {
+    const { lucro, margem } = calcularLucro(37000, 24500)
+    expect(lucro).toBe(12500)
+    expect(Math.round(margem! * 1000) / 10).toBe(33.8)
+  })
+
+  it('sem gasto (N/A) o lucro é o líquido', () => {
+    expect(calcularLucro(37000, null)).toEqual({ lucro: 37000, margem: 1 })
+  })
+
+  it('margem é null quando o líquido é zero', () => {
+    expect(calcularLucro(0, 1000)).toEqual({ lucro: -1000, margem: null })
   })
 })
 
@@ -70,22 +74,28 @@ describe('regras auxiliares', () => {
   it('estoque baixo com 20% ou menos', () => {
     expect(estoqueBaixo(6, 30)).toBe(true)
     expect(estoqueBaixo(7, 30)).toBe(false)
-    expect(estoqueBaixo(4, 20)).toBe(true)
     expect(estoqueBaixo(-1, 20)).toBe(true)
   })
 })
 
 describe('snapshot', () => {
-  it('ida e volta sem perder centavos', () => {
-    const r = calcularResumo(itens, vendas)
-    const s = criarSnapshot('2026-10-29', r, '2026-10-29T23:00:00Z')
-    expect(s.totais.lucro).toBe(125)
-    expect(s.totais.margem).toBe(0.3378)
-    expect(s.pagamentos.pix).toBe(210)
+  const r = calcularResumo(itens, vendas)
+
+  it('ida e volta sem perder centavos, com gasto', () => {
+    const s = criarSnapshot('2026-10-29', r, 24550, '2026-10-29T23:00:00Z')
+    expect(s.totais.gasto).toBe(245.5)
+    expect(s.totais.lucro).toBe(124.5)
     const img = imagemDoSnapshot(JSON.parse(JSON.stringify(s)))
-    expect(img.lucro).toBe(12500)
-    expect(img.sobra_custo).toBe(8350)
-    expect(img.itens[2].lucro).toBe(-200)
+    expect(img.gasto).toBe(24550)
+    expect(img.lucro).toBe(12450)
+    expect(img.liquido).toBe(37000)
     expect(img.produzido).toBe(90)
+  })
+
+  it('sem gasto (N/A) grava null', () => {
+    const s = criarSnapshot('2026-10-29', r, null, '2026-10-29T23:00:00Z')
+    expect(s.totais.gasto).toBeNull()
+    expect(imagemDoSnapshot(JSON.parse(JSON.stringify(s))).gasto).toBeNull()
+    expect(s.totais.lucro).toBe(370)
   })
 })

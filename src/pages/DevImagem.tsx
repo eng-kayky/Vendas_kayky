@@ -4,9 +4,9 @@ import ImagemResumo, { gerarPng } from '../components/ImagemResumo'
 import { calcularResumo, criarSnapshot, imagemDoSnapshot } from '../lib/resumo'
 
 const itens = [
-  { id: 'f', nome: 'Empada de frango', produzido: 40, preco: 600, custo: 250 },
-  { id: 'p', nome: 'Empada de palmito', produzido: 30, preco: 600, custo: 250 },
-  { id: 'u', nome: 'Pudim', produzido: 20, preco: 800, custo: 350 },
+  { id: 'f', nome: 'Empada de frango', produzido: 40, preco: 600 },
+  { id: 'p', nome: 'Empada de palmito', produzido: 30, preco: 600 },
+  { id: 'u', nome: 'Pudim', produzido: 20, preco: 800 },
 ]
 const vendas = [
   { item_dia_id: 'f', quantidade: 20, valor_cobrado: 12000, pagamento: 'pix' as const },
@@ -21,7 +21,7 @@ const vendas = [
 export default function DevImagem() {
   const ref = useRef<HTMLDivElement>(null)
   const [png, setPng] = useState<string | null>(null)
-  const dados = imagemDoSnapshot(criarSnapshot('2026-10-29', calcularResumo(itens, vendas), new Date().toISOString()))
+  const dados = imagemDoSnapshot(criarSnapshot('2026-10-29', calcularResumo(itens, vendas), 24500, new Date().toISOString()))
 
   useEffect(() => {
     if (ref.current) gerarPng(ref.current).then(setPng)

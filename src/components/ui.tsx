@@ -8,7 +8,7 @@ export function Marca({ tamanho = 40 }: { tamanho?: number }) {
       style={{ width: tamanho, height: tamanho, fontSize: tamanho * 0.36 }}
       aria-hidden
     >
-      E&amp;P
+      CV
     </div>
   )
 }

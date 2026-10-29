@@ -16,9 +16,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
-        name: 'Empada & Pudim',
-        short_name: 'Empada & Pudim',
-        description: 'Controle diário de vendas de empadas e pudim',
+        name: 'Controle de Vendas',
+        short_name: 'Vendas',
+        description: 'Controle diário de vendas',
         lang: 'pt-BR',
         start_url: base,
         scope: base,

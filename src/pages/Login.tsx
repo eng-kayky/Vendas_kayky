@@ -30,8 +30,8 @@ export default function Login() {
       <div className="mb-8 flex items-center gap-3">
         <Marca tamanho={48} />
         <div>
-          <h1 className="text-2xl font-extrabold">Empada &amp; Pudim</h1>
-          <p className="text-sm text-sec">Controle de vendas</p>
+          <h1 className="text-2xl font-extrabold">Controle de Vendas</h1>
+          <p className="text-sm text-sec">Entre para registrar as vendas</p>
         </div>
       </div>
       <form onSubmit={entrar} className="cartao space-y-4 p-5">

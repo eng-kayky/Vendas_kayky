@@ -65,10 +65,10 @@ const ImagemResumo = forwardRef<HTMLDivElement, { d: DadosImagem }>(function Ima
               fontWeight: 800,
             }}
           >
-            E&amp;P
+            CV
           </div>
           <div>
-            <div style={{ fontSize: 40, fontWeight: 800, lineHeight: 1.1 }}>Empada &amp; Pudim</div>
+            <div style={{ fontSize: 40, fontWeight: 800, lineHeight: 1.1 }}>Controle de Vendas</div>
             <div style={{ fontSize: 26, color: C.sec, marginTop: 4 }}>Resumo do dia</div>
           </div>
         </div>
@@ -92,7 +92,13 @@ const ImagemResumo = forwardRef<HTMLDivElement, { d: DadosImagem }>(function Ima
           {reais(d.lucro)}
         </div>
         <div style={{ fontSize: 28, color: C.sec, marginTop: 12 }}>
-          Margem de <b style={{ color: C.texto }}>{porcentagem(d.margem)}</b> sobre o faturamento líquido
+          {d.gasto === null ? (
+            'Sem gasto com material no dia'
+          ) : (
+            <>
+              Margem de <b style={{ color: C.texto }}>{porcentagem(d.margem)}</b> sobre o faturamento líquido
+            </>
+          )}
         </div>
       </div>
 
@@ -100,7 +106,12 @@ const ImagemResumo = forwardRef<HTMLDivElement, { d: DadosImagem }>(function Ima
       <div style={{ display: 'flex', gap: 20 }}>
         {[
           { t: 'Faturamento líquido', v: reais(d.liquido), s: `Bruto ${reais(d.bruto)}`, cor: C.texto },
-          { t: 'Custo da produção', v: reais(d.custo), s: `${d.produzido} unidades feitas`, cor: C.texto },
+          {
+            t: 'Gasto com material',
+            v: d.gasto === null ? 'N/A' : reais(d.gasto),
+            s: d.gasto === null ? 'não teve gasto' : `${d.vendas} vendas no dia`,
+            cor: C.texto,
+          },
           { t: 'Descontos', v: reais(d.descontos), s: `${porcentagem(pctDesconto)} do bruto`, cor: d.descontos > 0 ? C.alerta : C.texto },
         ].map((k) => (
           <div key={k.t} style={{ ...cartao, flex: 1, padding: '28px 30px', minWidth: 0 }}>
@@ -121,7 +132,6 @@ const ImagemResumo = forwardRef<HTMLDivElement, { d: DadosImagem }>(function Ima
               <th style={{ ...num, fontWeight: 600 }}>Vend.</th>
               <th style={{ ...num, fontWeight: 600 }}>Sobra</th>
               <th style={{ ...num, fontWeight: 600 }}>Faturado</th>
-              <th style={{ ...num, fontWeight: 600 }}>Lucro</th>
             </tr>
           </thead>
           <tbody>
@@ -131,8 +141,7 @@ const ImagemResumo = forwardRef<HTMLDivElement, { d: DadosImagem }>(function Ima
                 <td style={num}>{i.produzido}</td>
                 <td style={num}>{i.vendido}</td>
                 <td style={{ ...num, color: i.sobra < 0 ? C.alerta : C.texto }}>{i.sobra}</td>
-                <td style={num}>{reais(i.faturado)}</td>
-                <td style={{ ...num, fontWeight: 700, color: corLucro(i.lucro) }}>{reais(i.lucro)}</td>
+                <td style={{ ...num, fontWeight: 700 }}>{reais(i.faturado)}</td>
               </tr>
             ))}
             <tr style={{ height: linhaAlt, borderTop: `1px solid ${C.borda}`, fontWeight: 800 }}>
@@ -141,7 +150,6 @@ const ImagemResumo = forwardRef<HTMLDivElement, { d: DadosImagem }>(function Ima
               <td style={num}>{d.vendido}</td>
               <td style={num}>{d.sobra_unidades}</td>
               <td style={num}>{reais(d.liquido)}</td>
-              <td style={{ ...num, color: corLucro(d.lucro) }}>{reais(d.lucro)}</td>
             </tr>
           </tbody>
         </table>
@@ -168,10 +176,12 @@ const ImagemResumo = forwardRef<HTMLDivElement, { d: DadosImagem }>(function Ima
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 24, color: C.sec }}>
         <span>
           {d.sobra_unidades >= 0
-            ? `Sobra de ${d.sobra_unidades} unidades · ${reais(d.sobra_custo)} em custo`
+            ? `Sobra de ${d.sobra_unidades} unidades`
             : `${-d.sobra_unidades} unidades vendidas acima do produzido`}
         </span>
-        <span>Controle de vendas</span>
+        <span>
+          {d.vendido} de {d.produzido} unidades vendidas
+        </span>
       </div>
     </div>
   )

@@ -79,7 +79,7 @@ function Cabecalho({ data, aberto }: { data: string; aberto: DiaCompleto | null 
         <div className="flex items-center gap-3">
           <Marca tamanho={52} />
           <div>
-            <h1 className="text-2xl font-extrabold">Empada &amp; Pudim</h1>
+            <h1 className="text-2xl font-extrabold">Controle de Vendas</h1>
             <p className="text-sec">{dataLonga(data)}</p>
           </div>
         </div>
@@ -184,18 +184,27 @@ function DiaAberto({ dia, onMudou }: { dia: DiaCompleto; onMudou: () => void }) 
               <span className="hidden md:inline"> · desconto {reais(t.descontos)}</span>
             </p>
           </div>
-          <div className="cartao border-positivo/30 bg-gradient-to-br from-[#0D2A2E] to-cartao p-4 md:p-6">
+          <div className="cartao p-4 md:p-6">
             <p className="rotulo">
-              <span className="md:hidden">Lucro</span>
-              <span className="hidden md:inline">Lucro do dia</span>
+              <span className="md:hidden">Vendas</span>
+              <span className="hidden md:inline">Recebido por</span>
             </p>
-            <p className={`mt-1 text-2xl font-extrabold md:text-4xl ${t.lucro < 0 ? 'text-alerta' : 'text-positivo'}`}>
-              {reais(t.lucro)}
-            </p>
-            <p className="mt-1 text-sm text-sec">
-              <span className="md:hidden">Custo {reais(t.custo)}</span>
-              <span className="hidden md:inline">Faturamento − custo da produção ({reais(t.custo)})</span>
-            </p>
+            <p className="mt-1 text-2xl font-extrabold md:hidden">{t.vendas}</p>
+            <p className="mt-1 text-sm text-sec md:hidden">{t.vendido} unidades</p>
+            <dl className="mt-2 hidden space-y-1 md:block">
+              {(
+                [
+                  ['Pix', resumo.pagamentos.pix],
+                  ['Dinheiro', resumo.pagamentos.dinheiro],
+                  ['Cartão', resumo.pagamentos.cartao],
+                ] as const
+              ).map(([rotulo, v]) => (
+                <div key={rotulo} className="flex justify-between">
+                  <dt className="text-sec">{rotulo}</dt>
+                  <dd className="font-bold">{reais(v)}</dd>
+                </div>
+              ))}
+            </dl>
           </div>
           <div className="cartao hidden p-6 md:block">
             <p className="rotulo">Unidades vendidas</p>

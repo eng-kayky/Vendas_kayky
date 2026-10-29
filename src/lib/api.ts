@@ -17,7 +17,6 @@ export interface ItemDia {
   nome: string
   produzido: number
   preco: number // centavos
-  custo: number // centavos
 }
 
 export interface Venda {
@@ -41,7 +40,6 @@ export interface ProdutoAbrir {
   nome: string
   produzido: number
   preco: number
-  custo: number
 }
 
 /** Mensagem legível para erros do Supabase/Postgres. */
@@ -84,7 +82,6 @@ const paraItem = (i: Linha): ItemDia => ({
   nome: i.nome as string,
   produzido: i.produzido as number,
   preco: deBanco(i.preco as string),
-  custo: deBanco(i.custo as string),
 })
 
 const paraVenda = (v: Linha): Venda => ({
@@ -99,7 +96,7 @@ const paraVenda = (v: Linha): Venda => ({
 
 async function completar(dia: Dia): Promise<DiaCompleto> {
   const itens = ok(
-    await supabase.from('itens_dia').select('id, produto_id, nome, produzido, preco, custo').eq('dia_id', dia.id).order('nome'),
+    await supabase.from('itens_dia').select('id, produto_id, nome, produzido, preco').eq('dia_id', dia.id).order('nome'),
   ).map(paraItem)
   const ids = itens.map((i) => i.id)
   const vendas = ids.length
@@ -140,8 +137,8 @@ export async function diaAnteriorAberto(): Promise<Dia | null> {
 
 /** Produtos ativos com os valores do último dia em que foram usados. */
 export async function produtosParaAbrir(): Promise<ProdutoAbrir[]> {
-  const produtos = ok(await supabase.from('produtos').select('id, nome, preco_padrao, custo_padrao').eq('ativo', true).order('criado_em'))
-  const ultimos = ok(await supabase.from('ultimos_valores').select('produto_id, produzido, preco, custo'))
+  const produtos = ok(await supabase.from('produtos').select('id, nome, preco_padrao').eq('ativo', true).order('criado_em'))
+  const ultimos = ok(await supabase.from('ultimos_valores').select('produto_id, produzido, preco'))
   const mapa = new Map(ultimos.map((u) => [u.produto_id as string, u]))
   return produtos.map((p) => {
     const u = mapa.get(p.id)
@@ -150,28 +147,35 @@ export async function produtosParaAbrir(): Promise<ProdutoAbrir[]> {
       nome: p.nome,
       produzido: (u?.produzido as number) ?? 0,
       preco: deBanco(u ? (u.preco as string) : p.preco_padrao),
-      custo: deBanco(u ? (u.custo as string) : p.custo_padrao),
     }
   })
 }
 
-export async function criarProduto(nome: string, preco: number, custo: number): Promise<string> {
+/** Cria o produto; se já existiu e foi removido, reativa com o novo preço. */
+export async function criarProduto(nome: string, preco: number): Promise<string> {
   const p = ok(
     await supabase
       .from('produtos')
-      .insert({ nome: nome.trim(), preco_padrao: paraBanco(preco), custo_padrao: paraBanco(custo) })
+      .upsert({ nome: nome.trim(), preco_padrao: paraBanco(preco), ativo: true }, { onConflict: 'nome' })
       .select('id')
       .single(),
   )
   return p.id
 }
 
+/** Tira o produto da lista de "Abrir o dia" (o histórico continua intacto). */
+export async function removerProduto(id: string) {
+  const r = ok(await supabase.from('produtos').update({ ativo: false }).eq('id', id).select('id'))
+  if (!r.length) throw new Error('Produto não encontrado.')
+}
+
 export async function abrirDia(itens: ProdutoAbrir[]): Promise<string> {
+  // O custo por unidade não é mais usado; o gasto do dia é informado ao finalizar
   const payload = itens.map((i) => ({
     produto_id: i.produto_id,
     produzido: i.produzido,
     preco: paraBanco(i.preco),
-    custo: paraBanco(i.custo),
+    custo: '0.00',
   }))
   return ok(await supabase.rpc('abrir_dia', { p_itens: payload })) as string
 }
@@ -215,13 +219,16 @@ export async function clientesRecentes(limite = 8): Promise<string[]> {
   return [...vistos.values()]
 }
 
-/** Recarrega o dia do banco, calcula o resumo e grava o snapshot fechando o dia. */
-export async function finalizarDia(diaId: string): Promise<Snapshot> {
+/**
+ * Recarrega o dia do banco, calcula o resumo e grava o snapshot fechando o dia.
+ * `gasto`: gasto com material em centavos, ou null quando não teve gasto (N/A).
+ */
+export async function finalizarDia(diaId: string, gasto: number | null): Promise<Snapshot> {
   const atual = await carregarDiaPorId(diaId)
   if (!atual) throw new Error('Dia não encontrado.')
   if (atual.dia.status === 'fechado') throw new Error('Este dia já está fechado.')
   const resumo = calcularResumo(atual.itens, atual.vendas)
-  const snapshot = criarSnapshot(atual.dia.data, resumo, new Date().toISOString())
+  const snapshot = criarSnapshot(atual.dia.data, resumo, gasto, new Date().toISOString())
   const r = ok(
     await supabase.from('dias').update({ status: 'fechado', snapshot }).eq('id', diaId).eq('status', 'aberto').select('fechado_em'),
   )

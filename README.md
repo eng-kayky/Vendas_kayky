@@ -1,6 +1,8 @@
-# Empada & Pudim
+# Controle de Vendas
 
-App web instalável (PWA) para controlar a venda diária de empadas e pudim: produção do dia, vendas, estoque e lucro. No fim do dia, **Finalizar vendas** fecha o dia e gera uma imagem PNG de resumo.
+App web instalável (PWA) para controlar a venda diária: quantidade do dia, vendas e estoque. No fim do dia, **Finalizar vendas** pede o gasto com material (ou "não teve gasto"), calcula o lucro, fecha o dia e gera uma imagem PNG de resumo.
+
+Site: <https://eng-kayky.github.io/Vendas_kayky/>
 
 Vite + React + TypeScript + Tailwind, Supabase (Postgres + Auth), publicado no GitHub Pages.
 
