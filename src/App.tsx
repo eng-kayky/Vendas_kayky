@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { lazy, Suspense } from 'react'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { useOnline, useSessao } from './hooks'
 import { configurado } from './lib/supabase'
 import { Carregando } from './components/ui'
@@ -12,9 +13,21 @@ import Resultado from './pages/Resultado'
 import Historico from './pages/Historico'
 import HistoricoDia from './pages/HistoricoDia'
 
+// Prévia da imagem com dados de exemplo; não vai para o build de produção
+const DevImagem = import.meta.env.DEV ? lazy(() => import('./pages/DevImagem')) : null
+
 export default function App() {
   const sessao = useSessao()
   const online = useOnline()
+  const { pathname } = useLocation()
+
+  if (DevImagem && pathname === '/dev/imagem') {
+    return (
+      <Suspense>
+        <DevImagem />
+      </Suspense>
+    )
+  }
 
   if (!configurado) {
     return (

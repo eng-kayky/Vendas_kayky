@@ -26,8 +26,9 @@ const corLucro = (v: number) => (v < 0 ? C.alerta : C.positivo)
 const ImagemResumo = forwardRef<HTMLDivElement, { d: DadosImagem }>(function ImagemResumo({ d }, ref) {
   const pctDesconto = d.bruto > 0 ? d.descontos / d.bruto : null
   const muitos = d.itens.length > 4
-  const linhaAlt = muitos ? Math.max(44, Math.floor(300 / d.itens.length)) : 68
-  const fonteLinha = muitos ? 26 : 32
+  const linhaAlt = muitos ? Math.max(40, Math.floor(240 / d.itens.length)) : 60
+  const fonteLinha = muitos ? 26 : 30
+  const num: React.CSSProperties = { textAlign: 'right', paddingLeft: 16, whiteSpace: 'nowrap' }
 
   return (
     <div
@@ -36,10 +37,10 @@ const ImagemResumo = forwardRef<HTMLDivElement, { d: DadosImagem }>(function Ima
         width: LARGURA,
         height: ALTURA,
         boxSizing: 'border-box',
-        padding: '72px 72px 56px',
+        padding: '60px 72px 48px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 28,
+        gap: 24,
         fontFamily: 'Inter, sans-serif',
         fontVariantNumeric: 'tabular-nums',
         color: C.texto,
@@ -83,11 +84,11 @@ const ImagemResumo = forwardRef<HTMLDivElement, { d: DadosImagem }>(function Ima
           ...cartao,
           borderColor: d.lucro < 0 ? 'rgba(255,154,168,0.35)' : 'rgba(61,220,151,0.3)',
           background: d.lucro < 0 ? `linear-gradient(135deg, #2A1020 0%, ${C.cartao} 70%)` : `linear-gradient(135deg, #0D2A2E 0%, ${C.cartao} 70%)`,
-          padding: '40px 48px',
+          padding: '32px 48px',
         }}
       >
         <div style={{ ...rotulo, fontSize: 22, color: corLucro(d.lucro) }}>Lucro do dia</div>
-        <div style={{ fontSize: 132, fontWeight: 800, lineHeight: 1.05, color: corLucro(d.lucro), letterSpacing: '-0.02em', marginTop: 8 }}>
+        <div style={{ fontSize: 120, fontWeight: 800, lineHeight: 1.05, color: corLucro(d.lucro), letterSpacing: '-0.02em', marginTop: 4 }}>
           {reais(d.lucro)}
         </div>
         <div style={{ fontSize: 28, color: C.sec, marginTop: 12 }}>
@@ -111,36 +112,36 @@ const ImagemResumo = forwardRef<HTMLDivElement, { d: DadosImagem }>(function Ima
       </div>
 
       {/* tabela */}
-      <div style={{ ...cartao, padding: '20px 36px', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ ...cartao, padding: '12px 36px', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: fonteLinha }}>
           <thead>
-            <tr style={{ ...rotulo, height: 56 }}>
+            <tr style={{ ...rotulo, height: 52 }}>
               <th style={{ textAlign: 'left', fontWeight: 600 }}>Produto</th>
-              <th style={{ textAlign: 'right', fontWeight: 600, width: 90 }}>Prod.</th>
-              <th style={{ textAlign: 'right', fontWeight: 600, width: 90 }}>Vend.</th>
-              <th style={{ textAlign: 'right', fontWeight: 600, width: 100 }}>Sobra</th>
-              <th style={{ textAlign: 'right', fontWeight: 600, width: 200 }}>Faturado</th>
-              <th style={{ textAlign: 'right', fontWeight: 600, width: 190 }}>Lucro</th>
+              <th style={{ ...num, fontWeight: 600 }}>Prod.</th>
+              <th style={{ ...num, fontWeight: 600 }}>Vend.</th>
+              <th style={{ ...num, fontWeight: 600 }}>Sobra</th>
+              <th style={{ ...num, fontWeight: 600 }}>Faturado</th>
+              <th style={{ ...num, fontWeight: 600 }}>Lucro</th>
             </tr>
           </thead>
           <tbody>
             {d.itens.map((i) => (
               <tr key={i.nome} style={{ height: linhaAlt, borderTop: `1px solid ${C.borda}` }}>
-                <td style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 300 }}>{i.nome}</td>
-                <td style={{ textAlign: 'right' }}>{i.produzido}</td>
-                <td style={{ textAlign: 'right' }}>{i.vendido}</td>
-                <td style={{ textAlign: 'right', color: i.sobra < 0 ? C.alerta : C.texto }}>{i.sobra}</td>
-                <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{reais(i.faturado)}</td>
-                <td style={{ textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap', color: corLucro(i.lucro) }}>{reais(i.lucro)}</td>
+                <td style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 290 }}>{i.nome}</td>
+                <td style={num}>{i.produzido}</td>
+                <td style={num}>{i.vendido}</td>
+                <td style={{ ...num, color: i.sobra < 0 ? C.alerta : C.texto }}>{i.sobra}</td>
+                <td style={num}>{reais(i.faturado)}</td>
+                <td style={{ ...num, fontWeight: 700, color: corLucro(i.lucro) }}>{reais(i.lucro)}</td>
               </tr>
             ))}
             <tr style={{ height: linhaAlt, borderTop: `1px solid ${C.borda}`, fontWeight: 800 }}>
               <td>Total</td>
-              <td style={{ textAlign: 'right' }}>{d.produzido}</td>
-              <td style={{ textAlign: 'right' }}>{d.vendido}</td>
-              <td style={{ textAlign: 'right' }}>{d.sobra_unidades}</td>
-              <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{reais(d.liquido)}</td>
-              <td style={{ textAlign: 'right', whiteSpace: 'nowrap', color: corLucro(d.lucro) }}>{reais(d.lucro)}</td>
+              <td style={num}>{d.produzido}</td>
+              <td style={num}>{d.vendido}</td>
+              <td style={num}>{d.sobra_unidades}</td>
+              <td style={num}>{reais(d.liquido)}</td>
+              <td style={{ ...num, color: corLucro(d.lucro) }}>{reais(d.lucro)}</td>
             </tr>
           </tbody>
         </table>
