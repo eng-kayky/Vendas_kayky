@@ -94,9 +94,15 @@ export default function HistoricoDia() {
         <Link to={`/resultado/${dia.id}`} className="btn-primario min-h-14 w-full text-lg">
           <Icone nome="imagem" /> Gerar imagem de novo
         </Link>
-        <button type="button" className="btn-perigo min-h-12 w-full" onClick={() => setConfirmar(true)} disabled={!online}>
-          Reabrir dia
-        </button>
+        {d.resumido ? (
+          <Link to={`/lancar/${dia.id}`} className="btn-secundario min-h-12 w-full">
+            <Icone nome="lapis" tamanho={18} /> Editar lançamento
+          </Link>
+        ) : (
+          <button type="button" className="btn-perigo min-h-12 w-full" onClick={() => setConfirmar(true)} disabled={!online}>
+            Reabrir dia
+          </button>
+        )}
       </div>
 
       <Confirmar

@@ -124,7 +124,8 @@ export function Confirmar({
 }
 
 export function Abas() {
-  const atual = useLocation().pathname.startsWith('/historico') ? 'historico' : 'hoje'
+  const caminho = useLocation().pathname
+  const atual = caminho.startsWith('/historico') ? 'historico' : caminho.startsWith('/produtos') ? 'produtos' : 'hoje'
   const cls = (ativo: boolean) =>
     `btn min-h-11 rounded-full px-5 ${ativo ? 'bg-destaque text-fundo' : 'border border-borda text-texto hover:border-destaque/60'}`
   return (
@@ -134,6 +135,9 @@ export function Abas() {
       </Link>
       <Link to="/historico" className={cls(atual === 'historico')}>
         Histórico
+      </Link>
+      <Link to="/produtos" className={cls(atual === 'produtos')}>
+        Produtos
       </Link>
     </nav>
   )
@@ -172,6 +176,13 @@ const caminhos: Record<string, ReactNode> = {
       <path d="M21 15l-5-5L5 21" />
     </>
   ),
+  caixa: (
+    <>
+      <path d="M21 8l-9-5-9 5 9 5 9-5z" />
+      <path d="M3 8v8l9 5 9-5V8M12 13v8" />
+    </>
+  ),
+  lapis: <path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />,
   pessoa: (
     <>
       <circle cx="12" cy="8" r="4" />

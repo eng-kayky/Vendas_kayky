@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { calcularLucro, calcularResumo, criarSnapshot, descontoVenda, estoqueBaixo, imagemDoSnapshot, type ItemCalc, type VendaCalc } from './resumo'
+import {
+  calcularLucro,
+  calcularResumo,
+  criarSnapshot,
+  criarSnapshotLancamento,
+  descontoVenda,
+  estoqueBaixo,
+  imagemDoSnapshot,
+  validarLancamento,
+  type ItemCalc,
+  type VendaCalc,
+} from './resumo'
 
 const itens: ItemCalc[] = [
   { id: 'frango', nome: 'Empada de frango', produzido: 40, preco: 600 },
@@ -75,6 +86,36 @@ describe('regras auxiliares', () => {
     expect(estoqueBaixo(6, 30)).toBe(true)
     expect(estoqueBaixo(7, 30)).toBe(false)
     expect(estoqueBaixo(-1, 20)).toBe(true)
+  })
+})
+
+describe('lançamento de dia anterior por resumo', () => {
+  const linhas = [
+    { nome: 'Empada de frango', produzido: 30, vendido: 26, faturado: 15600 },
+    { nome: 'Pudim', produzido: null, vendido: 8, faturado: 4000 },
+  ]
+
+  it('monta o snapshot com sobra, lucro e gasto', () => {
+    const s = criarSnapshotLancamento('2026-10-25', linhas, { pix: 12000, dinheiro: 6000, cartao: 1600 }, 8000, 'x')
+    expect(s.tipo).toBe('resumo')
+    expect(s.totais.liquido).toBe(196)
+    expect(s.totais.lucro).toBe(116)
+    expect(s.totais.sobra_unidades).toBe(4) // pudim sem "tinha" conta como sem sobra
+    expect(s.itens[1].produzido).toBe(8)
+    const img = imagemDoSnapshot(JSON.parse(JSON.stringify(s)))
+    expect(img.resumido).toBe(true)
+    expect(img.lucro).toBe(11600)
+  })
+
+  it('pagamentos são opcionais, mas se informados têm de bater', () => {
+    expect(validarLancamento(linhas, null)).toBeNull()
+    expect(validarLancamento(linhas, { pix: 12000, dinheiro: 6000, cartao: 1600 })).toBeNull()
+    expect(validarLancamento(linhas, { pix: 12000, dinheiro: 0, cartao: 0 })).toMatch(/diferente/)
+  })
+
+  it('recusa vender mais do que tinha e lançamento vazio', () => {
+    expect(validarLancamento([{ nome: 'X', produzido: 2, vendido: 3, faturado: 100 }], null)).toMatch(/vendeu mais/)
+    expect(validarLancamento([], null)).toMatch(/pelo menos um/)
   })
 })
 

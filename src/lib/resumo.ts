@@ -100,6 +100,7 @@ export function calcularLucro(liquido: number, gasto: number | null) {
 
 export interface Snapshot {
   data: string
+  tipo?: 'resumo' // dia anterior lançado só com os totais (sem venda a venda)
   itens: { nome: string; produzido: number; vendido: number; sobra: number; faturado: number }[]
   totais: {
     vendas: number
@@ -149,11 +150,68 @@ export function criarSnapshot(data: string, resumo: Resumo, gasto: number | null
   }
 }
 
+// ---------- Dia anterior lançado por resumo ----------
+
+export interface LinhaLancamento {
+  nome: string
+  produzido: number | null // null = não informado (considera igual ao vendido)
+  vendido: number
+  faturado: number // centavos
+}
+
+/** Pagamentos são opcionais; se algum for informado, a soma tem de bater com o total dos produtos. */
+export function validarLancamento(linhas: LinhaLancamento[], pagamentos: Record<Pagamento, number> | null): string | null {
+  if (!linhas.length) return 'Informe pelo menos um produto vendido.'
+  for (const l of linhas) {
+    if (l.produzido !== null && l.produzido < l.vendido) return `${l.nome}: vendeu mais do que tinha.`
+  }
+  if (pagamentos) {
+    const total = linhas.reduce((s, l) => s + l.faturado, 0)
+    const pago = pagamentos.pix + pagamentos.dinheiro + pagamentos.cartao
+    if (pago !== total) return `A soma por pagamento (${(pago / 100).toFixed(2).replace('.', ',')}) é diferente do total dos produtos (${(total / 100).toFixed(2).replace('.', ',')}).`
+  }
+  return null
+}
+
+export function criarSnapshotLancamento(
+  data: string,
+  linhas: LinhaLancamento[],
+  pagamentos: Record<Pagamento, number> | null,
+  gasto: number | null,
+  fechadoEm: string,
+): Snapshot {
+  const liquido = linhas.reduce((s, l) => s + l.faturado, 0)
+  const { lucro, margem } = calcularLucro(liquido, gasto)
+  const itens = linhas.map((l) => {
+    const produzido = l.produzido ?? l.vendido
+    return { nome: l.nome, produzido, vendido: l.vendido, sobra: produzido - l.vendido, faturado: r(l.faturado) }
+  })
+  const p = pagamentos ?? { pix: 0, dinheiro: 0, cartao: 0 }
+  return {
+    data,
+    tipo: 'resumo',
+    itens,
+    totais: {
+      vendas: 0,
+      bruto: r(liquido), // sem venda a venda não há preço de tabela: bruto = líquido
+      descontos: 0,
+      liquido: r(liquido),
+      gasto: gasto === null ? null : r(gasto),
+      lucro: r(lucro),
+      margem: margem === null ? null : Math.round(margem * 10000) / 10000,
+      sobra_unidades: itens.reduce((s, i) => s + i.sobra, 0),
+    },
+    pagamentos: { pix: r(p.pix), dinheiro: r(p.dinheiro), cartao: r(p.cartao) },
+    fechado_em: fechadoEm,
+  }
+}
+
 /** Dados da imagem, em centavos, lidos só do snapshot. */
 export function imagemDoSnapshot(s: Snapshot) {
   const itens = s.itens.map((i) => ({ ...i, faturado: c(i.faturado) }))
   return {
     data: s.data,
+    resumido: s.tipo === 'resumo',
     itens,
     produzido: itens.reduce((a, i) => a + i.produzido, 0),
     vendido: itens.reduce((a, i) => a + i.vendido, 0),

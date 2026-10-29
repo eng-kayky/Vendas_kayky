@@ -65,6 +65,13 @@ function Cabecalho({ data, aberto }: { data: string; aberto: DiaCompleto | null 
         <div className="flex items-center gap-2">
           {aberto && <Pilula />}
           <Link
+            to="/produtos"
+            className="grid size-11 place-items-center rounded-xl border border-borda bg-cartao"
+            aria-label="Produtos"
+          >
+            <Icone nome="caixa" />
+          </Link>
+          <Link
             to="/historico"
             className="grid size-11 place-items-center rounded-xl border border-borda bg-cartao"
             aria-label="Histórico"
@@ -232,6 +239,14 @@ function DiaAberto({ dia, onMudou }: { dia: DiaCompleto; onMudou: () => void }) 
           <CartaoProduto key={i.id} item={i} online={online} />
         ))}
       </div>
+      <Link
+        to={`/editar-dia/${dia.dia.id}`}
+        className={`btn mt-3 min-h-12 w-full border border-dashed border-borda text-claro hover:border-destaque md:w-auto md:px-6 ${
+          online ? '' : 'pointer-events-none opacity-50'
+        }`}
+      >
+        <Icone nome="lapis" tamanho={18} /> Editar produtos do dia
+      </Link>
 
       <section className="cartao mt-6 hidden p-6 md:block">
         <div className="mb-2 flex items-center justify-between">

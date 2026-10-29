@@ -12,6 +12,9 @@ import Finalizar from './pages/Finalizar'
 import Resultado from './pages/Resultado'
 import Historico from './pages/Historico'
 import HistoricoDia from './pages/HistoricoDia'
+import LancarDia from './pages/LancarDia'
+import Produtos from './pages/Produtos'
+import EditarDia from './pages/EditarDia'
 
 // Prévia da imagem com dados de exemplo; não vai para o build de produção
 const DevImagem = import.meta.env.DEV ? lazy(() => import('./pages/DevImagem')) : null
@@ -58,6 +61,10 @@ export default function App() {
           <Route path="/resultado/:diaId" element={<Resultado />} />
           <Route path="/historico" element={<Historico />} />
           <Route path="/historico/:diaId" element={<HistoricoDia />} />
+          <Route path="/lancar" element={<LancarDia />} />
+          <Route path="/lancar/:diaId" element={<LancarDia />} />
+          <Route path="/produtos" element={<Produtos />} />
+          <Route path="/editar-dia/:diaId" element={<EditarDia />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       )}

@@ -109,7 +109,7 @@ const ImagemResumo = forwardRef<HTMLDivElement, { d: DadosImagem }>(function Ima
           {
             t: 'Gasto com material',
             v: d.gasto === null ? 'N/A' : reais(d.gasto),
-            s: d.gasto === null ? 'não teve gasto' : `${d.vendas} vendas no dia`,
+            s: d.gasto === null ? 'não teve gasto' : d.resumido ? 'informado no fechamento' : `${d.vendas} vendas no dia`,
             cor: C.texto,
           },
           { t: 'Descontos', v: reais(d.descontos), s: `${porcentagem(pctDesconto)} do bruto`, cor: d.descontos > 0 ? C.alerta : C.texto },

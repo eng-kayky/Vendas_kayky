@@ -46,7 +46,8 @@ export interface ProdutoAbrir {
 export function mensagemErro(e: unknown): string {
   const err = e as { message?: string; code?: string }
   if (!navigator.onLine) return 'Sem conexão com a internet. Nada foi salvo.'
-  if (err?.code === '23505') return 'Já existe um registro igual (o dia pode já ter sido aberto).'
+  if (err?.code === '23505')
+    return err.message?.includes('produtos') ? 'Já existe um produto com esse nome.' : 'Já existe um registro para esse dia.'
   if (err?.message?.includes('cliente_obrigatorio_no_pix')) return 'No Pix, o nome do cliente é obrigatório.'
   if (err?.message?.includes('Failed to fetch')) return 'Não foi possível falar com o servidor. Nada foi salvo.'
   return err?.message ?? 'Erro inesperado.'
@@ -248,6 +249,7 @@ export interface DiaHistorico {
   status: Dia['status']
   liquido: number | null
   lucro: number | null
+  resumido: boolean
 }
 
 export async function listarHistorico(): Promise<DiaHistorico[]> {
@@ -260,6 +262,90 @@ export async function listarHistorico(): Promise<DiaHistorico[]> {
       status: d.status,
       liquido: s ? Math.round(s.totais.liquido * 100) : null,
       lucro: s ? Math.round(s.totais.lucro * 100) : null,
+      resumido: s?.tipo === 'resumo',
     }
   })
+}
+
+// ---------- Dias anteriores lançados por resumo ----------
+
+export async function diaJaExiste(data: string): Promise<boolean> {
+  const d = okTalvez(await supabase.from('dias').select('id').eq('data', data).maybeSingle())
+  return d !== null
+}
+
+/** Grava um dia anterior já fechado, só com o resumo (sem venda a venda). */
+export async function lancarDiaAnterior(snapshot: Snapshot): Promise<string> {
+  if (snapshot.data >= hojeBelem()) throw new Error('Escolha uma data anterior a hoje.')
+  const d = ok(
+    await supabase
+      .from('dias')
+      .insert({ data: snapshot.data, status: 'fechado', snapshot, fechado_em: new Date().toISOString() })
+      .select('id')
+      .single(),
+  )
+  return d.id
+}
+
+/** Troca o resumo de um dia lançado (o banco só aceita mudar dia fechado reabrindo antes). */
+export async function editarLancamento(diaId: string, snapshot: Snapshot) {
+  await reabrirDia(diaId)
+  const r = ok(await supabase.from('dias').update({ status: 'fechado', snapshot }).eq('id', diaId).select('id'))
+  if (!r.length) throw new Error('Não foi possível salvar o lançamento.')
+}
+
+/** Exclui um dia lançado por resumo. Dias com venda a venda não passam por aqui. */
+export async function excluirLancamento(diaId: string) {
+  const atual = await carregarDiaPorId(diaId)
+  if (!atual || atual.dia.snapshot?.tipo !== 'resumo' || atual.itens.length) {
+    throw new Error('Só dá para excluir dias lançados por resumo.')
+  }
+  await reabrirDia(diaId)
+  ok(await supabase.from('dias').delete().eq('id', diaId).select('id'))
+}
+
+// ---------- Cadastro de produtos ----------
+
+export interface Produto {
+  id: string
+  nome: string
+  preco: number // centavos
+  ativo: boolean
+}
+
+export async function listarProdutos(): Promise<Produto[]> {
+  const ps = ok(await supabase.from('produtos').select('id, nome, preco_padrao, ativo').order('ativo', { ascending: false }).order('nome'))
+  return ps.map((p) => ({ id: p.id, nome: p.nome, preco: deBanco(p.preco_padrao), ativo: p.ativo }))
+}
+
+export async function salvarProduto(id: string, campos: { nome?: string; preco?: number; ativo?: boolean }) {
+  const dados: Record<string, unknown> = {}
+  if (campos.nome !== undefined) dados.nome = campos.nome.trim()
+  if (campos.preco !== undefined) dados.preco_padrao = paraBanco(campos.preco)
+  if (campos.ativo !== undefined) dados.ativo = campos.ativo
+  const r = ok(await supabase.from('produtos').update(dados).eq('id', id).select('id'))
+  if (!r.length) throw new Error('Produto não encontrado.')
+}
+
+// ---------- Produtos do dia aberto ----------
+
+export async function salvarItemDia(id: string, produzido: number, preco: number) {
+  const r = ok(await supabase.from('itens_dia').update({ produzido, preco: paraBanco(preco) }).eq('id', id).select('id'))
+  if (!r.length) throw new Error('Produto do dia não encontrado.')
+}
+
+export async function adicionarItemDia(diaId: string, produto: Produto, produzido: number, preco: number) {
+  ok(
+    await supabase
+      .from('itens_dia')
+      .insert({ dia_id: diaId, produto_id: produto.id, nome: produto.nome, produzido, preco: paraBanco(preco), custo: '0.00' })
+      .select('id'),
+  )
+}
+
+/** Tira um produto do dia, só se ele ainda não teve venda (apagar levaria as vendas junto). */
+export async function removerItemDia(id: string) {
+  const vendas = ok(await supabase.from('vendas').select('id').eq('item_dia_id', id).limit(1))
+  if (vendas.length) throw new Error('Esse produto já tem vendas hoje. Desfaça as vendas antes de tirá-lo do dia.')
+  ok(await supabase.from('itens_dia').delete().eq('id', id).select('id'))
 }
