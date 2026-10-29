@@ -27,15 +27,12 @@ jobs:
       - run: npm test
       - name: Build
         env:
-          # Settings > Secrets and variables > Actions (aba Variables ou Secrets)
-          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY }}
-        run: |
-          if [ -z "$VITE_SUPABASE_URL" ] || [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
-            echo "::error::VITE_SUPABASE_URL ou VITE_SUPABASE_ANON_KEY não cadastrada. Veja Settings > Secrets and variables > Actions."
-            exit 1
-          fi
-          npm run build
+          # Opcional: sobrescreve a URL/chave pública definidas em src/lib/supabase.ts
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+        run: npm run build
+      - name: Confere o projeto Supabase no build
+        run: grep -rq "iejjtbiygbtysgsjutdc" dist/assets
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
