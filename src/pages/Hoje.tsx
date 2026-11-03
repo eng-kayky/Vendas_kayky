@@ -168,6 +168,11 @@ function DiaAberto({ dia, onMudou }: { dia: DiaCompleto; onMudou: () => void }) 
   const resumo = calcularResumo(dia.itens, dia.vendas)
   const t = resumo.totais
   const baixos = resumo.itens.filter((i) => estoqueBaixo(i.restante, i.produzido))
+  const recebido = resumo.pagamentos.pix + resumo.pagamentos.dinheiro + resumo.pagamentos.cartao
+  const reservas = dia.vendas.filter((v) => v.status === 'reservada')
+  const valorReservado = reservas.reduce((s, v) => s + v.valor_cobrado, 0)
+  const fiados = dia.vendas.filter((v) => v.status !== 'reservada' && v.pagamento === 'fiado').length
+  const nomeItem = new Map(dia.itens.map((i) => [i.id, i.nome]))
 
   return (
     <>
@@ -184,68 +189,74 @@ function DiaAberto({ dia, onMudou }: { dia: DiaCompleto; onMudou: () => void }) 
         </div>
       )}
 
-      {/* Indicadores: no celular, tocar abre "Vendas de hoje" */}
-      <Link to="/vendas" className="mb-4 block md:pointer-events-none" aria-label="Ver vendas de hoje">
-        <div className="num grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
-          <div className="cartao p-4 md:p-6">
-            <p className="rotulo">
-              <span className="md:hidden">Líquido</span>
-              <span className="hidden md:inline">Faturamento líquido</span>
-            </p>
-            <p className="mt-1 text-2xl font-extrabold md:text-4xl">{reais(t.liquido)}</p>
-            <p className="mt-1 text-sm text-sec">
-              Bruto {reais(t.bruto)}
-              <span className="hidden md:inline"> · desconto {reais(t.descontos)}</span>
-            </p>
-          </div>
-          <div className="cartao p-4 md:p-6">
-            <p className="rotulo">
-              <span className="md:hidden">Vendas</span>
-              <span className="hidden md:inline">Recebido por</span>
-            </p>
-            <p className="mt-1 text-2xl font-extrabold md:hidden">{t.vendas}</p>
-            <p className="mt-1 text-sm text-sec md:hidden">{t.vendido} unidades</p>
-            <dl className="mt-2 hidden space-y-1 md:block">
-              {(
-                [
-                  ['Pix', resumo.pagamentos.pix],
-                  ['Dinheiro', resumo.pagamentos.dinheiro],
-                  ['Cartão', resumo.pagamentos.cartao],
-                ] as const
-              ).map(([rotulo, v]) => (
-                <div key={rotulo} className="flex justify-between">
-                  <dt className="text-sec">{rotulo}</dt>
-                  <dd className="font-bold">{reais(v)}</dd>
-                </div>
-              ))}
-              {resumo.pagamentos.fiado > 0 && (
-                <div className="flex justify-between">
-                  <dt className="text-alerta">Fiado (a receber)</dt>
-                  <dd className="font-bold text-alerta">{reais(resumo.pagamentos.fiado)}</dd>
-                </div>
-              )}
-            </dl>
-          </div>
-          <div className="cartao hidden p-6 md:block">
-            <p className="rotulo">Unidades vendidas</p>
-            <p className="mt-1 text-4xl font-extrabold">
-              {t.vendido} <span className="text-xl font-medium text-sec">/ {t.produzido}</span>
-            </p>
-            <div className="mt-3">
-              <Barra valor={t.vendido} total={t.produzido} />
-            </div>
-            <p className="mt-2 text-sm text-sec">{t.sobra_unidades} restantes</p>
-          </div>
-        </div>
-        <div className="mt-3 flex items-center gap-3 md:hidden">
-          <div className="w-2/5">
-            <Barra valor={t.vendido} total={t.produzido} />
-          </div>
-          <p className="num text-sm text-sec">
-            {t.vendido} de {t.produzido} vendidas · {t.sobra_unidades} restantes
+      {/* Indicadores: dinheiro que entrou, fiado e reservado ficam separados */}
+      <div className="num mb-4 grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+        <Link to="/vendas" className="cartao block p-4 hover:border-destaque/60 md:p-5" aria-label="Recebido: ver vendas de hoje">
+          <p className="rotulo">Recebido</p>
+          <p className="mt-1 text-2xl font-extrabold md:text-3xl">{reais(recebido)}</p>
+          <p className="mt-1 text-xs text-sec md:text-sm">
+            Pix {reais(resumo.pagamentos.pix)} · Din. {reais(resumo.pagamentos.dinheiro)} · Cartão {reais(resumo.pagamentos.cartao)}
+          </p>
+        </Link>
+        <Link
+          to="/fiado"
+          className={`cartao block p-4 hover:border-destaque/60 md:p-5 ${resumo.pagamentos.fiado ? 'border-alerta/40' : ''}`}
+          aria-label="Fiado: ver a receber"
+        >
+          <p className={`rotulo ${resumo.pagamentos.fiado ? 'text-alerta' : ''}`}>Fiado</p>
+          <p className={`mt-1 text-2xl font-extrabold md:text-3xl ${resumo.pagamentos.fiado ? 'text-alerta' : ''}`}>
+            {reais(resumo.pagamentos.fiado)}
+          </p>
+          <p className="mt-1 text-xs text-sec md:text-sm">
+            {fiados} {fiados === 1 ? 'venda' : 'vendas'} a receber
+          </p>
+        </Link>
+        <div className={`cartao p-4 md:p-5 ${t.reservas ? 'border-claro/40' : ''}`}>
+          <p className={`rotulo ${t.reservas ? 'text-claro' : ''}`}>Reservado</p>
+          <p className={`mt-1 text-2xl font-extrabold md:text-3xl ${t.reservas ? 'text-claro' : ''}`}>{reais(valorReservado)}</p>
+          <p className="mt-1 text-xs text-sec md:text-sm">
+            {t.reservas} {t.reservas === 1 ? 'reserva' : 'reservas'} · {t.reservado} un.
           </p>
         </div>
-      </Link>
+        <div className="cartao p-4 md:p-5">
+          <p className="rotulo">Vendidas</p>
+          <p className="mt-1 text-2xl font-extrabold md:text-3xl">
+            {t.vendido} <span className="text-base font-medium text-sec">/ {t.produzido}</span>
+          </p>
+          <div className="mt-2">
+            <Barra valor={t.vendido} total={t.produzido} />
+          </div>
+          <p className="mt-1 text-xs text-sec md:text-sm">{t.sobra_unidades} disponíveis</p>
+        </div>
+      </div>
+      <p className="num -mt-2 mb-4 px-1 text-sm text-sec">
+        Faturamento do dia (recebido + fiado): <strong className="text-texto">{reais(t.liquido)}</strong>
+        {t.descontos !== 0 && <> · descontos {reais(t.descontos)}</>}
+      </p>
+
+      {reservas.length > 0 && (
+        <section className="cartao mb-4 border-claro/40 p-4 md:p-5">
+          <h2 className="mb-2 text-lg font-bold text-claro">Reservas para entregar</h2>
+          <ul className="divide-y divide-borda/60">
+            {reservas.map((v) => (
+              <li key={v.id} className="num flex items-center justify-between gap-3 py-2">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold">{v.cliente}</p>
+                  <p className="text-sm text-sec">
+                    {v.quantidade}× {nomeItem.get(v.item_dia_id)} · {reais(v.valor_cobrado)}
+                  </p>
+                </div>
+                <Link
+                  to={`/venda/${v.id}`}
+                  className={`btn-primario shrink-0 px-4 ${online ? '' : 'pointer-events-none opacity-50'}`}
+                >
+                  Entregar
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <div className="grid gap-3 md:grid-cols-3 md:gap-4">
         {resumo.itens.map((i) => (
@@ -264,7 +275,7 @@ function DiaAberto({ dia, onMudou }: { dia: DiaCompleto; onMudou: () => void }) 
       <section className="cartao mt-6 hidden p-6 md:block">
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-lg font-bold">Últimas vendas</h2>
-          <p className="text-sm text-sec">{dia.vendas.length} vendas hoje</p>
+          <p className="text-sm text-sec">{t.vendas} vendas hoje</p>
         </div>
         <VendasLista vendas={dia.vendas} itens={dia.itens} aberto modo="tabela" onMudou={onMudou} />
       </section>
@@ -297,7 +308,7 @@ function CartaoProduto({ item, online }: { item: LinhaResumo; online: boolean })
         <p className="flex items-baseline gap-2">
           <span className={`text-5xl font-extrabold ${item.restante < 0 ? 'text-alerta' : ''}`}>{item.restante}</span>
           <span className={baixo ? 'text-alerta md:text-sec' : 'text-sec'}>
-            restantes<span className="md:hidden">{baixo ? ' · baixo' : ''}</span>
+            disponíveis<span className="md:hidden">{baixo ? ' · baixo' : ''}</span>
           </span>
         </p>
         <button type="button" className="btn-primario min-h-14 w-32 text-lg md:hidden" onClick={vender} disabled={!online}>
@@ -316,9 +327,12 @@ function CartaoProduto({ item, online }: { item: LinhaResumo; online: boolean })
       </div>
       <div className="mt-2 flex justify-between text-sm text-sec">
         <span className="md:hidden">
-          {item.vendido} de {item.produzido} vendidas
+          {item.vendido} de {item.produzido} vendidas{item.reservado ? ` · ${item.reservado} reservadas` : ''}
         </span>
-        <span className="hidden md:inline">Vendido {item.vendido}</span>
+        <span className="hidden md:inline">
+          Vendido {item.vendido}
+          {item.reservado ? ` · reservado ${item.reservado}` : ''}
+        </span>
         <span className="hidden md:inline">Produzido {item.produzido}</span>
       </div>
       <button type="button" className="btn-primario mt-4 hidden min-h-13 w-full text-lg md:flex" onClick={vender} disabled={!online}>

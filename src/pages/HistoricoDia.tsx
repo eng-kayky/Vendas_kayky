@@ -66,7 +66,6 @@ export default function HistoricoDia() {
           <L r="Dinheiro" v={reais(d.pagamentos.dinheiro)} />
           <L r="Cartão" v={reais(d.pagamentos.cartao)} />
           {d.pagamentos.fiado > 0 && <L r="Vendido fiado" v={reais(d.pagamentos.fiado)} />}
-          {d.fiado_recebido > 0 && <L r="Fiado recebido no dia" v={reais(d.fiado_recebido)} />}
           <L r="Sobra" v={`${d.sobra_unidades} unidades`} />
         </section>
 

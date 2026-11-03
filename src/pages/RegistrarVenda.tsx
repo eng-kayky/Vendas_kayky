@@ -1,70 +1,118 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { carregarHoje, clientesRecentes, mensagemErro, registrarVenda, type DiaCompleto } from '../lib/api'
+import {
+  atualizarVenda,
+  carregarHoje,
+  carregarVenda,
+  clientesRecentes,
+  desfazerVenda,
+  mensagemErro,
+  registrarReserva,
+  registrarVenda,
+  type DiaCompleto,
+  type Venda,
+} from '../lib/api'
 import { lerReais, numeroBR, porcentagem, reais } from '../lib/dinheiro'
 import { calcularResumo, descontoVenda, exigeCliente, PAGAMENTOS, type Pagamento } from '../lib/resumo'
 import { useOnline } from '../hooks'
 import { Aviso, Carregando, Confirmar, Icone, Pagina, Rodape, Topo } from '../components/ui'
 
+/**
+ * Uma tela, quatro usos:
+ *  /vender/:itemId  → vender ou reservar
+ *  /venda/:vendaId  → corrigir uma venda, ou entregar/cancelar uma reserva
+ */
+type Modo = 'vender' | 'reservar' | 'editar' | 'entregar'
+
 export default function RegistrarVenda() {
-  const { itemId } = useParams()
+  const { itemId, vendaId } = useParams()
   const nav = useNavigate()
   const online = useOnline()
   const [dia, setDia] = useState<DiaCompleto | null | undefined>(undefined)
+  const [venda, setVenda] = useState<Venda | null>(null)
+  const [modo, setModo] = useState<Modo>(vendaId ? 'editar' : 'vender')
   const [clientes, setClientes] = useState<string[]>([])
   const [qtd, setQtd] = useState(1)
   const [cobrado, setCobrado] = useState('')
   const [editado, setEditado] = useState(false) // valor cobrado foi digitado pelo usuário
-  const [pagamento, setPagamento] = useState<Pagamento>('pix')
+  const [pagamento, setPagamento] = useState<Pagamento | null>('pix')
   const [cliente, setCliente] = useState('')
   const [erro, setErro] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
   const [confirmarExcesso, setConfirmarExcesso] = useState(false)
+  const [confirmarCancelar, setConfirmarCancelar] = useState(false)
 
   useEffect(() => {
-    carregarHoje()
-      .then(setDia)
-      .catch((e) => {
+    ;(async () => {
+      try {
+        const d = await carregarHoje()
+        if (vendaId) {
+          const v = await carregarVenda(vendaId)
+          if (!v || !d?.itens.some((i) => i.id === v.item_dia_id)) throw new Error('Só dá para alterar vendas do dia aberto hoje.')
+          setVenda(v)
+          setQtd(v.quantidade)
+          setCobrado(numeroBR(v.valor_cobrado))
+          setEditado(true)
+          setCliente(v.cliente ?? '')
+          if (v.status === 'reservada') {
+            setModo('entregar')
+            setPagamento(null)
+          } else setPagamento(v.pagamento)
+        }
+        setDia(d)
+      } catch (e) {
         setErro(mensagemErro(e))
         setDia(null)
-      })
+      }
+    })()
     clientesRecentes().then(setClientes).catch(() => {})
-  }, [])
+  }, [vendaId])
 
-  const linha = dia ? calcularResumo(dia.itens, dia.vendas).itens.find((i) => i.id === itemId) : undefined
+  const idItem = venda?.item_dia_id ?? itemId
+  const linha = dia ? calcularResumo(dia.itens, dia.vendas).itens.find((i) => i.id === idItem) : undefined
 
   // Valor cobrado acompanha quantidade × preço até o usuário editar
   useEffect(() => {
     if (linha && !editado) setCobrado(numeroBR(qtd * linha.preco))
   }, [qtd, linha?.preco, editado]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (dia === undefined) return <Pagina><Topo titulo="Registrar venda" /><Carregando /></Pagina>
+  const tituloModo = { vender: 'Registrar venda', reservar: 'Reservar', editar: 'Editar venda', entregar: 'Entregar reserva' }[modo]
+
+  if (dia === undefined) return <Pagina><Topo titulo={tituloModo} /><Carregando /></Pagina>
   if (!dia || !linha || dia.dia.status !== 'aberto') {
     return (
       <Pagina>
-        <Topo titulo="Registrar venda" />
+        <Topo titulo={tituloModo} />
         <Aviso>{erro ?? 'Não há dia aberto para este produto. Volte e abra o dia.'}</Aviso>
       </Pagina>
     )
   }
 
+  const reservando = modo === 'reservar'
+  // Ao editar, as unidades desta própria venda/reserva voltam para o disponível
+  const disponivel = linha.restante + (venda ? venda.quantidade : 0)
   const tabela = qtd * linha.preco
   const valor = lerReais(cobrado)
   const desconto = valor === null ? 0 : descontoVenda(qtd, linha.preco, valor)
-  const clienteObrigatorio = exigeCliente(pagamento)
+  const clienteObrigatorio = reservando || (pagamento !== null && exigeCliente(pagamento))
   const faltaCliente = clienteObrigatorio && cliente.trim() === ''
-  const excede = qtd > linha.restante
-  const podeEnviar = online && valor !== null && !faltaCliente && qtd > 0 && !enviando
+  const faltaPagamento = !reservando && pagamento === null
+  const excede = qtd > disponivel
+  const podeEnviar = online && valor !== null && !faltaCliente && !faltaPagamento && qtd > 0 && !enviando
 
   async function enviar(confirmado = false) {
-    if (valor === null) return setErro('Informe o valor cobrado.')
-    if (faltaCliente) return setErro('No Pix, o nome do cliente (do comprovante) é obrigatório.')
+    if (valor === null) return setErro('Informe o valor.')
+    if (faltaPagamento) return setErro('Escolha a forma de pagamento.')
+    if (faltaCliente) return setErro(reservando ? 'Informe o nome de quem reservou.' : 'No Pix e no fiado, o nome do cliente é obrigatório.')
     if (excede && !confirmado) return setConfirmarExcesso(true)
     setConfirmarExcesso(false)
     setErro(null)
     setEnviando(true)
     try {
-      await registrarVenda({ item_dia_id: linha!.id, quantidade: qtd, valor_cobrado: valor, pagamento, cliente })
+      const base = { quantidade: qtd, valor_cobrado: valor, cliente }
+      if (modo === 'vender') await registrarVenda({ ...base, item_dia_id: linha!.id, pagamento: pagamento! })
+      else if (modo === 'reservar') await registrarReserva({ ...base, item_dia_id: linha!.id })
+      else await atualizarVenda(venda!.id, { ...base, pagamento: pagamento!, status: modo === 'entregar' ? 'concluida' : undefined })
       nav('/', { replace: true })
     } catch (e) {
       setErro(mensagemErro(e))
@@ -72,9 +120,27 @@ export default function RegistrarVenda() {
     }
   }
 
+  async function cancelarReserva() {
+    setEnviando(true)
+    try {
+      await desfazerVenda(venda!.id)
+      nav('/', { replace: true })
+    } catch (e) {
+      setErro(mensagemErro(e))
+      setEnviando(false)
+      setConfirmarCancelar(false)
+    }
+  }
+
+  const rotuloBotao = enviando
+    ? 'Salvando…'
+    : `${{ vender: 'Confirmar venda', reservar: 'Reservar', editar: 'Salvar alterações', entregar: 'Entregar' }[modo]} · ${
+        valor === null ? '—' : reais(valor)
+      }`
+
   return (
     <Pagina>
-      <Topo titulo="Registrar venda" />
+      <Topo titulo={tituloModo} />
       <form
         className="num space-y-3"
         onSubmit={(e) => {
@@ -82,14 +148,39 @@ export default function RegistrarVenda() {
           enviar()
         }}
       >
+        {!vendaId && (
+          <div className="grid grid-cols-2 gap-1 rounded-2xl border border-borda bg-cartao p-1" role="tablist" aria-label="Tipo">
+            {(['vender', 'reservar'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                role="tab"
+                aria-selected={modo === m}
+                className={`btn min-h-11 ${modo === m ? 'bg-destaque text-fundo' : 'text-sec'}`}
+                onClick={() => setModo(m)}
+              >
+                {m === 'vender' ? 'Vender' : 'Reservar'}
+              </button>
+            ))}
+          </div>
+        )}
+        {reservando && (
+          <p className="px-1 text-sm text-sec">
+            As unidades ficam separadas para o cliente. Quando ele buscar, toque na reserva em "Hoje" e escolha o pagamento.
+          </p>
+        )}
+        {modo === 'entregar' && (
+          <p className="px-1 text-sm text-sec">Reserva de {venda?.cliente}. Escolha como pagou para virar venda.</p>
+        )}
+
         <section className="cartao flex items-center justify-between gap-3 p-4">
           <div className="min-w-0">
             <h2 className="truncate text-lg font-bold">{linha.nome}</h2>
             <p className="text-sm text-sec">Preço do dia {reais(linha.preco)}</p>
           </div>
           <div className="text-right">
-            <p className={`text-3xl font-extrabold ${linha.restante <= 0 ? 'text-alerta' : ''}`}>{linha.restante}</p>
-            <p className="text-sm text-sec">restantes</p>
+            <p className={`text-3xl font-extrabold ${disponivel <= 0 ? 'text-alerta' : ''}`}>{disponivel}</p>
+            <p className="text-sm text-sec">disponíveis</p>
           </div>
         </section>
 
@@ -130,10 +221,8 @@ export default function RegistrarVenda() {
         </section>
         {excede && (
           <Aviso>
-            {linha.restante <= 0
-              ? 'Este produto já está sem estoque.'
-              : `A quantidade passa do estoque (restam ${linha.restante}).`}{' '}
-            Dá para vender assim mesmo, com confirmação.
+            {disponivel <= 0 ? 'Este produto já está sem estoque.' : `A quantidade passa do disponível (${disponivel}).`} Dá para seguir
+            assim mesmo, com confirmação.
           </Aviso>
         )}
 
@@ -145,7 +234,7 @@ export default function RegistrarVenda() {
             <span className="font-bold text-texto">{reais(tabela)}</span>
           </div>
           <label htmlFor="cobrado" className="rotulo block pt-1">
-            Valor cobrado
+            {reservando ? 'Valor combinado' : 'Valor cobrado'}
           </label>
           <div className="flex min-h-16 items-center gap-2 rounded-xl border border-destaque bg-fundo/60 px-4 focus-within:ring-2 focus-within:ring-destaque/30">
             <span className="text-xl text-sec">R$</span>
@@ -191,33 +280,35 @@ export default function RegistrarVenda() {
         </section>
 
         <section className="cartao space-y-3 p-4">
-          <fieldset>
-            <legend className="rotulo mb-2">Pagamento</legend>
-            <div className="grid grid-cols-4 gap-2">
-              {PAGAMENTOS.map((p) => (
-                <label
-                  key={p.valor}
-                  className={`btn min-h-12 cursor-pointer border px-1 text-sm sm:text-base ${
-                    pagamento === p.valor
-                      ? p.valor === 'fiado'
-                        ? 'border-alerta bg-alerta text-fundo'
-                        : 'border-destaque bg-destaque text-fundo'
-                      : 'border-borda text-texto'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="pagamento"
-                    value={p.valor}
-                    checked={pagamento === p.valor}
-                    onChange={() => setPagamento(p.valor)}
-                    className="sr-only"
-                  />
-                  {p.rotulo}
-                </label>
-              ))}
-            </div>
-          </fieldset>
+          {!reservando && (
+            <fieldset>
+              <legend className="rotulo mb-2">Pagamento</legend>
+              <div className="grid grid-cols-4 gap-2">
+                {PAGAMENTOS.map((p) => (
+                  <label
+                    key={p.valor}
+                    className={`btn min-h-12 cursor-pointer border px-1 text-sm sm:text-base ${
+                      pagamento === p.valor
+                        ? p.valor === 'fiado'
+                          ? 'border-alerta bg-alerta text-fundo'
+                          : 'border-destaque bg-destaque text-fundo'
+                        : 'border-borda text-texto'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="pagamento"
+                      value={p.valor}
+                      checked={pagamento === p.valor}
+                      onChange={() => setPagamento(p.valor)}
+                      className="sr-only"
+                    />
+                    {p.rotulo}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          )}
 
           <div className="space-y-2">
             <div className="flex flex-wrap items-baseline justify-between gap-x-2">
@@ -225,9 +316,11 @@ export default function RegistrarVenda() {
                 Cliente
               </label>
               <span className="text-xs text-claro">
-                {pagamento === 'fiado'
-                  ? 'Quem vai pagar depois · obrigatório'
-                  : `Nome no comprovante · ${clienteObrigatorio ? 'obrigatório no Pix' : 'opcional'}`}
+                {reservando
+                  ? 'Quem vai buscar · obrigatório'
+                  : pagamento === 'fiado'
+                    ? 'Quem vai pagar depois · obrigatório'
+                    : `Nome no comprovante · ${clienteObrigatorio ? 'obrigatório no Pix' : 'opcional'}`}
               </span>
             </div>
             <div
@@ -265,26 +358,48 @@ export default function RegistrarVenda() {
           </div>
         </section>
 
+        {modo === 'entregar' && (
+          <button type="button" className="btn-perigo min-h-12 w-full" onClick={() => setConfirmarCancelar(true)} disabled={!online || enviando}>
+            Cancelar reserva
+          </button>
+        )}
+
         {erro && <Aviso>{erro}</Aviso>}
 
         <Rodape>
           <button type="submit" className="btn-primario min-h-14 w-full text-lg" disabled={!podeEnviar}>
-            {enviando ? 'Salvando…' : `Confirmar venda · ${valor === null ? '—' : reais(valor)}`}
+            {rotuloBotao}
           </button>
-          {faltaCliente && <p className="mt-2 text-center text-xs text-sec">Informe o cliente para vender no Pix.</p>}
+          {(faltaCliente || faltaPagamento) && (
+            <p className="mt-2 text-center text-xs text-sec">
+              {faltaPagamento ? 'Escolha como o cliente pagou.' : reservando ? 'Informe quem vai buscar.' : 'Informe o cliente.'}
+            </p>
+          )}
         </Rodape>
       </form>
 
       <Confirmar
         aberto={confirmarExcesso}
-        titulo="Vender acima do estoque?"
-        confirmar="Vender assim mesmo"
+        titulo="Passar do disponível?"
+        confirmar="Seguir assim mesmo"
         perigo
         ocupado={enviando}
         onConfirmar={() => enviar(true)}
         onCancelar={() => setConfirmarExcesso(false)}
       >
-        Restam {linha.restante} de {linha.nome} e a venda é de {qtd}. O restante vai ficar negativo ({linha.restante - qtd}).
+        Restam {disponivel} de {linha.nome} e são {qtd}. O restante vai ficar negativo ({disponivel - qtd}).
+      </Confirmar>
+
+      <Confirmar
+        aberto={confirmarCancelar}
+        titulo="Cancelar esta reserva?"
+        confirmar="Cancelar reserva"
+        perigo
+        ocupado={enviando}
+        onConfirmar={cancelarReserva}
+        onCancelar={() => setConfirmarCancelar(false)}
+      >
+        As {venda?.quantidade} unidades voltam para o disponível.
       </Confirmar>
     </Pagina>
   )

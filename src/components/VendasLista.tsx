@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { desfazerVenda, mensagemErro, type ItemDia, type Venda } from '../lib/api'
 import { hora } from '../lib/datas'
 import { reais } from '../lib/dinheiro'
@@ -50,23 +51,35 @@ export default function VendasLista({
     }
   }
 
-  const linhas = vendas.map((v) => {
+  // Reservas aparecem à parte, na tela Hoje
+  const concluidas = vendas.filter((v) => v.status !== 'reservada')
+  const linhas = concluidas.map((v) => {
     const item = porId.get(v.item_dia_id)
     return { v, nome: item?.nome ?? '—', desconto: item ? descontoVenda(v.quantidade, item.preco, v.valor_cobrado) : 0 }
   })
 
   const botaoDesfazer = (v: Venda) =>
     aberto && (
-      <button
-        type="button"
-        onClick={() => setAlvo(v)}
-        disabled={!online}
-        className="grid size-11 place-items-center rounded-xl text-sec hover:bg-alerta/10 hover:text-alerta disabled:opacity-40"
-        aria-label="Desfazer venda"
-        title="Desfazer venda"
-      >
-        <Icone nome="desfazer" />
-      </button>
+      <div className="flex shrink-0">
+        <Link
+          to={`/venda/${v.id}`}
+          className={`grid size-11 place-items-center rounded-xl text-sec hover:bg-destaque/10 hover:text-claro ${online ? '' : 'pointer-events-none opacity-40'}`}
+          aria-label="Editar venda"
+          title="Editar venda"
+        >
+          <Icone nome="lapis" tamanho={18} />
+        </Link>
+        <button
+          type="button"
+          onClick={() => setAlvo(v)}
+          disabled={!online}
+          className="grid size-11 place-items-center rounded-xl text-sec hover:bg-alerta/10 hover:text-alerta disabled:opacity-40"
+          aria-label="Desfazer venda"
+          title="Desfazer venda"
+        >
+          <Icone nome="desfazer" />
+        </button>
+      </div>
     )
 
   return (
@@ -76,7 +89,7 @@ export default function VendasLista({
           <Aviso>{erro}</Aviso>
         </div>
       )}
-      {vendas.length === 0 ? (
+      {concluidas.length === 0 ? (
         <p className="py-6 text-center text-sec">Nenhuma venda registrada ainda.</p>
       ) : modo === 'tabela' ? (
         <div className="overflow-x-auto">
@@ -90,7 +103,7 @@ export default function VendasLista({
                 <th className="px-3 py-3 text-right font-semibold">Cobrado</th>
                 <th className="px-3 py-3 text-right font-semibold">Desconto</th>
                 <th className="px-3 py-3 font-semibold">Pgto</th>
-                {aberto && <th className="w-14 px-1 py-3"><span className="sr-only">Desfazer</span></th>}
+                {aberto && <th className="w-24 px-1 py-3"><span className="sr-only">Ações</span></th>}
               </tr>
             </thead>
             <tbody>
@@ -104,7 +117,7 @@ export default function VendasLista({
                   <td className="px-3 py-2 text-right">
                     <Desconto valor={desconto} />
                   </td>
-                  <td className="px-3 py-2">{rotuloPg[v.pagamento]}</td>
+                  <td className="px-3 py-2">{rotuloPg[v.pagamento ?? '']}</td>
                   {aberto && <td className="px-1 py-1">{botaoDesfazer(v)}</td>}
                 </tr>
               ))}
@@ -124,7 +137,7 @@ export default function VendasLista({
                 </div>
                 <div className="flex items-baseline justify-between gap-2 text-sm text-sec">
                   <span className="truncate">
-                    {hora(v.criado_em)} · {rotuloPg[v.pagamento]} · {v.cliente || 'sem nome'}
+                    {hora(v.criado_em)} · {rotuloPg[v.pagamento ?? '']} · {v.cliente || 'sem nome'}
                   </span>
                   <span className="shrink-0">
                     <Desconto valor={desconto} />

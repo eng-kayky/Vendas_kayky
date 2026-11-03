@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { desfazerRecebimento, listarFiados, mensagemErro, receberFiado, type Fiado as FiadoT } from '../lib/api'
+import { alterarRecebimento, desfazerRecebimento, listarFiados, mensagemErro, receberFiado, type Fiado as FiadoT } from '../lib/api'
 import { dataCurta } from '../lib/datas'
 import { reais } from '../lib/dinheiro'
 import { FORMAS_RECEBIMENTO, type FormaRecebimento } from '../lib/resumo'
@@ -14,6 +14,7 @@ export default function Fiado() {
   const [receber, setReceber] = useState<FiadoT | null>(null)
   const [forma, setForma] = useState<FormaRecebimento>('pix')
   const [desfazer, setDesfazer] = useState<FiadoT | null>(null)
+  const [trocar, setTrocar] = useState<FiadoT | null>(null)
   const [ocupado, setOcupado] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
 
@@ -44,6 +45,7 @@ export default function Fiado() {
       setOcupado(false)
       setReceber(null)
       setDesfazer(null)
+      setTrocar(null)
     }
   }
 
@@ -126,14 +128,27 @@ export default function Fiado() {
                         {reais(f.recebimento!.valor)}
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      className="btn min-h-11 shrink-0 px-3 text-sm text-sec hover:bg-alerta/10 hover:text-alerta"
-                      onClick={() => setDesfazer(f)}
-                      disabled={!online || ocupado}
-                    >
-                      Desfazer
-                    </button>
+                    <div className="flex shrink-0">
+                      <button
+                        type="button"
+                        className="btn min-h-11 px-3 text-sm text-claro hover:bg-destaque/10"
+                        onClick={() => {
+                          setForma(f.recebimento!.pagamento)
+                          setTrocar(f)
+                        }}
+                        disabled={!online || ocupado}
+                      >
+                        Trocar forma
+                      </button>
+                      <button
+                        type="button"
+                        className="btn min-h-11 px-3 text-sm text-sec hover:bg-alerta/10 hover:text-alerta"
+                        onClick={() => setDesfazer(f)}
+                        disabled={!online || ocupado}
+                      >
+                        Desfazer
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -153,7 +168,7 @@ export default function Fiado() {
         {receber && (
           <div className="space-y-3">
             <p>
-              {receber.quantidade}× {receber.produto}, vendido em {dataCurta(receber.data)}. O valor entra no caixa de hoje como fiado recebido.
+              {receber.quantidade}× {receber.produto}, vendido em {dataCurta(receber.data)}. O pagamento aparece no resumo daquele dia.
             </p>
             <fieldset>
               <legend className="rotulo mb-2">Pagou com</legend>
@@ -179,6 +194,29 @@ export default function Fiado() {
             </fieldset>
           </div>
         )}
+      </Confirmar>
+
+      <Confirmar
+        aberto={trocar !== null}
+        titulo={`Como ${trocar?.cliente} pagou?`}
+        confirmar="Salvar"
+        ocupado={ocupado}
+        onConfirmar={() => trocar?.recebimento && executar(() => alterarRecebimento(trocar.recebimento!.id, forma))}
+        onCancelar={() => setTrocar(null)}
+      >
+        <div className="grid grid-cols-3 gap-2">
+          {FORMAS_RECEBIMENTO.map((p) => (
+            <label
+              key={p.valor}
+              className={`btn min-h-11 cursor-pointer border text-sm ${
+                forma === p.valor ? 'border-destaque bg-destaque text-fundo' : 'border-borda text-texto'
+              }`}
+            >
+              <input type="radio" name="forma-troca" className="sr-only" checked={forma === p.valor} onChange={() => setForma(p.valor)} />
+              {p.rotulo}
+            </label>
+          ))}
+        </div>
       </Confirmar>
 
       <Confirmar

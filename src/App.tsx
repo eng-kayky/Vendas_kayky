@@ -57,6 +57,7 @@ export default function App() {
           <Route path="/" element={<Hoje />} />
           <Route path="/abrir" element={<AbrirDia />} />
           <Route path="/vender/:itemId" element={<RegistrarVenda />} />
+          <Route path="/venda/:vendaId" element={<RegistrarVenda />} />
           <Route path="/vendas" element={<VendasHoje />} />
           <Route path="/finalizar/:diaId" element={<Finalizar />} />
           <Route path="/resultado/:diaId" element={<Resultado />} />

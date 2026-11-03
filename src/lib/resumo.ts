@@ -26,16 +26,22 @@ export interface ItemCalc {
   preco: number // centavos
 }
 
+export type StatusVenda = 'concluida' | 'reservada'
+
 export interface VendaCalc {
   item_dia_id: string
   quantidade: number
   valor_cobrado: number // centavos
-  pagamento: Pagamento
+  pagamento: Pagamento | null // null só em reserva
+  status?: StatusVenda // ausente = concluída
 }
+
+export const ehReserva = (v: { status?: StatusVenda }) => v.status === 'reservada'
 
 export interface LinhaResumo extends ItemCalc {
   vendido: number
-  restante: number
+  reservado: number // separado para cliente buscar; ainda não é venda
+  restante: number // produzido − vendido − reservado
   bruto: number
   faturado: number
 }
@@ -45,7 +51,9 @@ export interface Resumo {
   totais: {
     produzido: number
     vendido: number
-    vendas: number // número de vendas registradas
+    reservado: number
+    reservas: number // número de reservas em aberto
+    vendas: number // número de vendas concluídas
     bruto: number
     descontos: number
     liquido: number
@@ -66,19 +74,27 @@ export function estoqueBaixo(restante: number, produzido: number): boolean {
 
 export function calcularResumo(itens: ItemCalc[], vendas: VendaCalc[]): Resumo {
   const pagamentos = semPagamentos()
-  const porItem = new Map<string, { vendido: number; faturado: number }>()
+  const porItem = new Map<string, { vendido: number; reservado: number; faturado: number }>()
+  let concluidas = 0
+  let reservas = 0
 
   for (const v of vendas) {
-    const acc = porItem.get(v.item_dia_id) ?? { vendido: 0, faturado: 0 }
-    acc.vendido += v.quantidade
-    acc.faturado += v.valor_cobrado
+    const acc = porItem.get(v.item_dia_id) ?? { vendido: 0, reservado: 0, faturado: 0 }
+    if (ehReserva(v)) {
+      acc.reservado += v.quantidade
+      reservas++
+    } else {
+      acc.vendido += v.quantidade
+      acc.faturado += v.valor_cobrado
+      if (v.pagamento) pagamentos[v.pagamento] += v.valor_cobrado
+      concluidas++
+    }
     porItem.set(v.item_dia_id, acc)
-    pagamentos[v.pagamento] += v.valor_cobrado
   }
 
   const linhas: LinhaResumo[] = itens.map((i) => {
-    const { vendido, faturado } = porItem.get(i.id) ?? { vendido: 0, faturado: 0 }
-    return { ...i, vendido, restante: i.produzido - vendido, bruto: vendido * i.preco, faturado }
+    const { vendido, reservado, faturado } = porItem.get(i.id) ?? { vendido: 0, reservado: 0, faturado: 0 }
+    return { ...i, vendido, reservado, restante: i.produzido - vendido - reservado, bruto: vendido * i.preco, faturado }
   })
 
   const soma = (f: (l: LinhaResumo) => number) => linhas.reduce((s, l) => s + f(l), 0)
@@ -90,7 +106,9 @@ export function calcularResumo(itens: ItemCalc[], vendas: VendaCalc[]): Resumo {
     totais: {
       produzido: soma((l) => l.produzido),
       vendido: soma((l) => l.vendido),
-      vendas: vendas.length,
+      reservado: soma((l) => l.reservado),
+      reservas,
+      vendas: concluidas,
       bruto,
       descontos: bruto - liquido,
       liquido,
@@ -122,9 +140,41 @@ export interface Snapshot {
     margem: number | null
     sobra_unidades: number
   }
-  pagamentos: Record<Pagamento, number> // fiado = vendido fiado nesse dia (a receber)
-  fiado_recebido?: number // fiados de dias anteriores pagos nesse dia (entrou no caixa, não no faturamento)
+  pagamentos: Record<Pagamento, number> // fiado = vendido fiado nesse dia
+  vendas_lista?: VendaListada[] // cada venda do dia (dias fechados antes desta versão não têm)
+  fiado_recebido?: number // obsoleto: dias fechados em versões antigas
   fechado_em: string
+}
+
+/** Uma venda como aparece na lista do resumo (valor em reais no snapshot). */
+export interface VendaListada {
+  venda_id: string
+  hora: string // ISO
+  cliente: string | null
+  produto: string
+  quantidade: number
+  valor: number
+  pagamento: Pagamento
+}
+
+/** Lista das vendas concluídas do dia, da mais antiga para a mais nova, com valor em centavos. */
+export function listarVendasDoDia(
+  itens: { id: string; nome: string }[],
+  vendas: (VendaCalc & { id: string; cliente: string | null; criado_em: string })[],
+): VendaListada[] {
+  const nome = new Map(itens.map((i) => [i.id, i.nome]))
+  return vendas
+    .filter((v) => !ehReserva(v) && v.pagamento)
+    .map((v) => ({
+      venda_id: v.id,
+      hora: v.criado_em,
+      cliente: v.cliente?.trim() || null,
+      produto: nome.get(v.item_dia_id) ?? '—',
+      quantidade: v.quantidade,
+      valor: v.valor_cobrado,
+      pagamento: v.pagamento!,
+    }))
+    .sort((a, b) => a.hora.localeCompare(b.hora))
 }
 
 const r = (centavos: number) => centavos / 100
@@ -142,7 +192,7 @@ export function criarSnapshot(
   resumo: Resumo,
   gasto: number | null,
   fechadoEm: string,
-  fiadoRecebido = 0,
+  lista: VendaListada[] = [], // valores em centavos
 ): Snapshot {
   const t = resumo.totais
   const { lucro, margem } = calcularLucro(t.liquido, gasto)
@@ -166,7 +216,7 @@ export function criarSnapshot(
       sobra_unidades: t.sobra_unidades,
     },
     pagamentos: pagamentosEmReais(resumo.pagamentos),
-    fiado_recebido: r(fiadoRecebido),
+    vendas_lista: lista.map((v) => ({ ...v, valor: r(v.valor) })),
     fechado_em: fechadoEm,
   }
 }
@@ -251,8 +301,23 @@ export function imagemDoSnapshot(s: Snapshot) {
       cartao: c(s.pagamentos.cartao),
       fiado: c(s.pagamentos.fiado ?? 0),
     },
-    fiado_recebido: c(s.fiado_recebido ?? 0),
+    lista: (s.vendas_lista ?? []).map((v) => ({ ...v, valor: c(v.valor) })),
   }
+}
+
+/** Situação de cada fiado na data em que a imagem é gerada (o pagamento fica no dia da venda). */
+export type SituacaoFiado = Record<string, { pagamento: FormaRecebimento; data: string }>
+
+/** Quanto do fiado do dia já foi pago e quanto falta, conforme a situação atual. */
+export function totaisFiado(lista: { venda_id: string; valor: number; pagamento: Pagamento }[], situacao: SituacaoFiado) {
+  let pago = 0
+  let aReceber = 0
+  for (const v of lista) {
+    if (v.pagamento !== 'fiado') continue
+    if (situacao[v.venda_id]) pago += v.valor
+    else aReceber += v.valor
+  }
+  return { pago, aReceber }
 }
 
 export type DadosImagem = ReturnType<typeof imagemDoSnapshot>

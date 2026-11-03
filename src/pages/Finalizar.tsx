@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Navigate, useNavigate, useParams } from 'react-router-dom'
-import { carregarDiaPorId, fiadoRecebidoNoDia, finalizarDia, mensagemErro } from '../lib/api'
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
+import { carregarDiaPorId, finalizarDia, mensagemErro } from '../lib/api'
 import { dataCurta, diaDaSemana } from '../lib/datas'
 import { lerReais, porcentagem, reais } from '../lib/dinheiro'
 import { calcularLucro, calcularResumo } from '../lib/resumo'
@@ -12,8 +12,6 @@ export default function Finalizar() {
   const nav = useNavigate()
   const online = useOnline()
   const { dados, erro: erroCarga, carregando } = useCarregar(() => carregarDiaPorId(diaId), [diaId], 20000)
-  const { dados: recebidoDia } = useCarregar(async () => (dados ? fiadoRecebidoNoDia(dados.dia.data) : 0), [dados?.dia.data])
-  const fiadoRecebido = recebidoDia ?? 0
   const [gastoTexto, setGastoTexto] = useState('')
   const [semGasto, setSemGasto] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
@@ -79,11 +77,17 @@ export default function Finalizar() {
           ))}
         </section>
         {r.pagamentos.fiado > 0 && (
-          <p className="px-1 text-sm text-sec">O fiado conta no faturamento de hoje e fica na tela Fiado até o cliente pagar.</p>
+          <p className="px-1 text-sm text-sec">
+            O fiado conta no faturamento deste dia. Quando o cliente pagar, o resumo deste dia passa a mostrar como foi pago.
+          </p>
         )}
-        {fiadoRecebido > 0 && (
-          <Aviso tipo="info">
-            Hoje entrou {reais(fiadoRecebido)} de fiado de dias anteriores. Esse valor vai para o caixa, não para o faturamento de hoje.
+        {t.reservas > 0 && (
+          <Aviso>
+            Há {t.reservas} {t.reservas === 1 ? 'reserva' : 'reservas'} em aberto ({t.reservado} unidades). Entregue ou cancele na tela{' '}
+            <Link to="/" className="font-bold underline">
+              Hoje
+            </Link>{' '}
+            antes de finalizar.
           </Aviso>
         )}
 
@@ -151,7 +155,7 @@ export default function Finalizar() {
           type="button"
           className="btn-primario min-h-14 w-full text-lg"
           onClick={finalizar}
-          disabled={enviando || !online || !gastoValido}
+          disabled={enviando || !online || !gastoValido || t.reservas > 0}
         >
           <Icone nome="imagem" /> {enviando ? 'Finalizando…' : 'Finalizar e gerar imagem'}
         </button>

@@ -7,6 +7,8 @@ import {
   descontoVenda,
   estoqueBaixo,
   imagemDoSnapshot,
+  listarVendasDoDia,
+  totaisFiado,
   validarLancamento,
   type ItemCalc,
   type VendaCalc,
@@ -65,6 +67,54 @@ describe('calcularResumo', () => {
   it('venda acima do estoque deixa o restante negativo', () => {
     const r2 = calcularResumo([itens[2]], [{ item_dia_id: 'pudim', quantidade: 22, valor_cobrado: 17600, pagamento: 'pix' }])
     expect(r2.itens[0].restante).toBe(-2)
+  })
+})
+
+describe('reservas', () => {
+  const comReserva: VendaCalc[] = [
+    ...vendas,
+    { item_dia_id: 'pudim', quantidade: 3, valor_cobrado: 2400, pagamento: null, status: 'reservada' },
+  ]
+  const r = calcularResumo(itens, comReserva)
+
+  it('reserva tira do disponível, mas não é venda', () => {
+    expect(r.itens[2].reservado).toBe(3)
+    expect(r.itens[2].vendido).toBe(9)
+    expect(r.itens[2].restante).toBe(8) // 20 − 9 − 3
+    expect(r.totais.liquido).toBe(37000)
+    expect(r.totais.vendas).toBe(7)
+    expect(r.totais.reservas).toBe(1)
+    expect(r.totais.reservado).toBe(3)
+  })
+
+  it('reserva não entra na lista de vendas do resumo', () => {
+    const lista = listarVendasDoDia(
+      itens,
+      comReserva.map((v, i) => ({ ...v, id: `v${i}`, cliente: null, criado_em: `2026-10-29T1${i}:00:00Z` })),
+    )
+    expect(lista).toHaveLength(7)
+    expect(lista[0].produto).toBe('Empada de frango')
+  })
+})
+
+describe('lista de vendas e fiado na imagem', () => {
+  const lista = [
+    { venda_id: 'a', hora: '2026-10-29T16:00:00Z', cliente: 'Ana', produto: 'Pudim', quantidade: 1, valor: 800, pagamento: 'fiado' as const },
+    { venda_id: 'b', hora: '2026-10-29T16:10:00Z', cliente: 'Caio', produto: 'Pudim', quantidade: 2, valor: 1600, pagamento: 'fiado' as const },
+    { venda_id: 'c', hora: '2026-10-29T16:20:00Z', cliente: null, produto: 'Pudim', quantidade: 1, valor: 800, pagamento: 'pix' as const },
+  ]
+
+  it('snapshot guarda a lista e a imagem lê em centavos', () => {
+    const s = criarSnapshot('2026-10-29', calcularResumo(itens, vendas), null, 'x', lista)
+    expect(s.vendas_lista![1].valor).toBe(16)
+    const img = imagemDoSnapshot(JSON.parse(JSON.stringify(s)))
+    expect(img.lista[1].valor).toBe(1600)
+    expect(img.lista[0].cliente).toBe('Ana')
+  })
+
+  it('separa fiado pago e a receber pela situação atual', () => {
+    expect(totaisFiado(lista, { a: { pagamento: 'pix', data: '2026-11-02' } })).toEqual({ pago: 800, aReceber: 1600 })
+    expect(totaisFiado(lista, {})).toEqual({ pago: 0, aReceber: 2400 })
   })
 })
 
@@ -142,16 +192,13 @@ describe('snapshot', () => {
     expect(img.produzido).toBe(90)
   })
 
-  it('guarda o fiado recebido no dia e lê snapshots antigos sem fiado', () => {
-    const s = criarSnapshot('2026-10-29', r, null, 'x', 3000)
-    expect(s.fiado_recebido).toBe(30)
-    expect(imagemDoSnapshot(JSON.parse(JSON.stringify(s))).fiado_recebido).toBe(3000)
-    const antigo = JSON.parse(JSON.stringify(s))
-    delete antigo.fiado_recebido
+  it('lê snapshots antigos sem fiado e sem lista de vendas', () => {
+    const antigo = JSON.parse(JSON.stringify(criarSnapshot('2026-10-29', r, null, 'x')))
     delete antigo.pagamentos.fiado
+    delete antigo.vendas_lista
     const img = imagemDoSnapshot(antigo)
     expect(img.pagamentos.fiado).toBe(0)
-    expect(img.fiado_recebido).toBe(0)
+    expect(img.lista).toEqual([])
   })
 
   it('sem gasto (N/A) grava null', () => {
