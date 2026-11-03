@@ -214,6 +214,8 @@ const LINHAS_PRIMEIRA = 21 // a primeira página tem o cabeçalho de resumo
 const LINHAS_DEMAIS = 27
 
 const rotuloPg: Record<string, string> = { pix: 'Pix', dinheiro: 'Dinheiro', cartao: 'Cartão', fiado: 'Fiado' }
+// Na etiqueta do fiado pago o espaço é curto
+const curtoPg: Record<string, string> = { pix: 'Pix', dinheiro: 'Din.', cartao: 'Cartão' }
 
 /** Agrupa por produto e divide em páginas de 1080×1350 (normalmente uma só). */
 export function paginasDeVendas(d: DadosImagem): BlocoPagina[][] {
@@ -333,7 +335,7 @@ export const ImagemVendas = forwardRef<
                       <td style={{ ...td, paddingLeft: 18, fontSize: ehFiado ? 19 : 22, fontWeight: ehFiado ? 700 : 400, color: ehFiado ? (s ? C.positivo : C.alerta) : C.texto }}>
                         {ehFiado
                           ? s
-                            ? `Fiado pago ${rotuloPg[s.pagamento]} ${dataCurta(s.data).slice(0, 5)}`
+                            ? `Fiado pago ${curtoPg[s.pagamento]} ${dataCurta(s.data).slice(0, 5)}`
                             : 'Fiado · a receber'
                           : rotuloPg[v.pagamento]}
                       </td>
