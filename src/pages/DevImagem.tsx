@@ -10,16 +10,25 @@ const itens = [
   { id: 'p', nome: 'Empada de palmito', produzido: 30, preco: 600 },
   { id: 'u', nome: 'Pudim', produzido: 20, preco: 800 },
 ]
+// Parecido com um dia real: 17 vendas de empada e pudim
 const base: [string, number, number, Pagamento, string | null][] = [
-  ['f', 20, 12000, 'pix', 'Ana Paula R.'],
-  ['f', 8, 4400, 'dinheiro', null],
-  ['p', 15, 9000, 'pix', 'Carlos M.'],
-  ['p', 4, 2400, 'cartao', 'Fernanda L.'],
-  ['p', 5, 2400, 'dinheiro', null],
-  ['u', 2, 1600, 'cartao', 'Yago'],
-  ['u', 7, 5200, 'dinheiro', 'João Victor'],
-  ['f', 3, 1800, 'fiado', 'Maria das Graças'],
-  ['u', 1, 800, 'fiado', 'Pedro'],
+  ['f', 1, 600, 'pix', 'Yago'],
+  ['f', 1, 600, 'pix', 'João Victor'],
+  ['u', 1, 500, 'fiado', 'João Victor'],
+  ['u', 2, 1000, 'pix', 'Rodolfo'],
+  ['f', 1, 600, 'pix', 'Kayky'],
+  ['f', 1, 600, 'pix', 'Jandison'],
+  ['f', 1, 600, 'pix', 'Priscilla'],
+  ['u', 1, 500, 'pix', 'Moisés'],
+  ['u', 1, 500, 'fiado', 'Jandison'],
+  ['f', 1, 600, 'pix', 'Jorge'],
+  ['f', 1, 600, 'pix', 'Prof Tauany'],
+  ['f', 1, 600, 'fiado', 'Prof Mayara'],
+  ['f', 1, 600, 'pix', 'Lucas Felipe'],
+  ['f', 1, 600, 'pix', 'Lucas Ian'],
+  ['f', 1, 600, 'dinheiro', 'Eduardo'],
+  ['u', 1, 400, 'pix', 'Lucas Felipe'],
+  ['u', 1, 500, 'pix', 'Jorge'],
 ]
 const vendas = base.map(([item, q, v, p, cli], i) => ({
   id: `v${i}`,
@@ -30,7 +39,10 @@ const vendas = base.map(([item, q, v, p, cli], i) => ({
   cliente: cli,
   criado_em: `2026-10-29T${String(13 + Math.floor(i / 3)).padStart(2, '0')}:${String((i * 7) % 60).padStart(2, '0')}:00Z`,
 }))
-const situacao = { v7: { pagamento: 'pix' as const, data: '2026-11-02' } }
+const situacao = {
+  v8: { pagamento: 'pix' as const, data: '2026-10-30' },
+  v11: { pagamento: 'pix' as const, data: '2026-10-30' },
+}
 
 export default function DevImagem() {
   const nos = useRef<(HTMLDivElement | null)[]>([])
@@ -58,7 +70,7 @@ export default function DevImagem() {
             key={i}
             ref={(el) => (nos.current[i + 1] = el)}
             d={dados}
-            vendas={vs}
+            blocos={vs}
             pagina={i + 1}
             total={paginas.length}
             situacao={situacao}

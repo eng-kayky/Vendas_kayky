@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  agruparPorProduto,
+  paginarGrupos,
   calcularLucro,
   calcularResumo,
   criarSnapshot,
@@ -115,6 +117,44 @@ describe('lista de vendas e fiado na imagem', () => {
   it('separa fiado pago e a receber pela situação atual', () => {
     expect(totaisFiado(lista, { a: { pagamento: 'pix', data: '2026-11-02' } })).toEqual({ pago: 800, aReceber: 1600 })
     expect(totaisFiado(lista, {})).toEqual({ pago: 0, aReceber: 2400 })
+  })
+})
+
+describe('lista da imagem separada por produto', () => {
+  const v = (id: string, produto: string, hora: string, valor = 600) => ({
+    venda_id: id,
+    hora: `2026-10-29T${hora}:00Z`,
+    cliente: id,
+    produto,
+    quantidade: 1,
+    valor,
+    pagamento: 'pix' as const,
+  })
+  const d = {
+    itens: [{ nome: 'Empada de frango' }, { nome: 'Pudim' }],
+    lista: [v('a', 'Pudim', '17:00', 500), v('b', 'Empada de frango', '18:00'), v('c', 'Empada de frango', '16:00'), v('d', 'Pudim', '15:00', 500)],
+  }
+
+  it('agrupa na ordem dos produtos e ordena pela hora', () => {
+    const g = agruparPorProduto(d)
+    expect(g.map((x) => x.produto)).toEqual(['Empada de frango', 'Pudim'])
+    expect(g[0].vendas.map((x) => x.venda_id)).toEqual(['c', 'b'])
+    expect(g[1]).toMatchObject({ quantidade: 2, valor: 1000 })
+  })
+
+  it('cabe tudo numa página quando há espaço', () => {
+    const p = paginarGrupos(agruparPorProduto(d), { primeira: 20, demais: 30 })
+    expect(p).toHaveLength(1)
+    expect(p[0].map((b) => b.vendas.length)).toEqual([2, 2])
+  })
+
+  it('quebra um produto em duas páginas e marca a continuação', () => {
+    const muitos = { itens: d.itens, lista: Array.from({ length: 25 }, (_, i) => v(`x${i}`, 'Pudim', `1${String(i).padStart(1, '0')}:00`.slice(0, 5))) }
+    const p = paginarGrupos(agruparPorProduto(muitos), { primeira: 10, demais: 30 })
+    expect(p).toHaveLength(2)
+    expect(p[0][0].continuacao).toBe(false)
+    expect(p[1][0].continuacao).toBe(true)
+    expect(p.flat().reduce((s, b) => s + b.vendas.length, 0)).toBe(25)
   })
 })
 

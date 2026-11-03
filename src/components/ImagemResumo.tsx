@@ -2,7 +2,7 @@ import { forwardRef } from 'react'
 import { toPng } from 'html-to-image'
 import { dataCurta, diaDaSemana, hora } from '../lib/datas'
 import { porcentagem, reais } from '../lib/dinheiro'
-import { totaisFiado, type DadosImagem, type SituacaoFiado } from '../lib/resumo'
+import { agruparPorProduto, paginarGrupos, totaisFiado, type BlocoPagina, type DadosImagem, type SituacaoFiado } from '../lib/resumo'
 
 export const LARGURA = 1080
 export const ALTURA = 1350
@@ -208,25 +208,29 @@ const ImagemResumo = forwardRef<HTMLDivElement, { d: DadosImagem; situacao?: Sit
 
 export default ImagemResumo
 
-// ---------- Páginas com a lista de todas as vendas do dia ----------
+// ---------- Página "Vendas do dia": resumo no topo e a lista separada por produto ----------
 
-export const VENDAS_POR_PAGINA = 18
+const LINHAS_PRIMEIRA = 21 // a primeira página tem o cabeçalho de resumo
+const LINHAS_DEMAIS = 27
 
 const rotuloPg: Record<string, string> = { pix: 'Pix', dinheiro: 'Dinheiro', cartao: 'Cartão', fiado: 'Fiado' }
 
-/** Divide a lista em páginas de 1080×1350. */
-export function paginasDeVendas(d: DadosImagem) {
-  const paginas: DadosImagem['lista'][] = []
-  for (let i = 0; i < d.lista.length; i += VENDAS_POR_PAGINA) paginas.push(d.lista.slice(i, i + VENDAS_POR_PAGINA))
-  return paginas
+/** Agrupa por produto e divide em páginas de 1080×1350 (normalmente uma só). */
+export function paginasDeVendas(d: DadosImagem): BlocoPagina[][] {
+  if (!d.lista.length) return []
+  return paginarGrupos(agruparPorProduto(d), { primeira: LINHAS_PRIMEIRA, demais: LINHAS_DEMAIS }, 1.7)
 }
 
 export const ImagemVendas = forwardRef<
   HTMLDivElement,
-  { d: DadosImagem; vendas: DadosImagem['lista']; pagina: number; total: number; situacao: SituacaoFiado }
->(function ImagemVendas({ d, vendas, pagina, total, situacao }, ref) {
-  const th: React.CSSProperties = { ...rotulo, fontSize: 18, fontWeight: 600, textAlign: 'left', padding: '0 8px 14px' }
-  const td: React.CSSProperties = { padding: '0 6px', fontSize: 23, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+  { d: DadosImagem; blocos: BlocoPagina[]; pagina: number; total: number; situacao: SituacaoFiado }
+>(function ImagemVendas({ d, blocos, pagina, total, situacao }, ref) {
+  const grupos = agruparPorProduto(d)
+  const fiado = totaisFiado(d.lista, situacao)
+  const recebido = d.pagamentos.pix + d.pagamentos.dinheiro + d.pagamentos.cartao
+  const unidades = grupos.reduce((s, g) => s + g.quantidade, 0)
+  const td: React.CSSProperties = { padding: '0 6px', fontSize: 22, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+
   return (
     <div
       ref={ref}
@@ -234,10 +238,10 @@ export const ImagemVendas = forwardRef<
         width: LARGURA,
         height: ALTURA,
         boxSizing: 'border-box',
-        padding: '60px 64px 48px',
+        padding: '52px 60px 40px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 24,
+        gap: 18,
         fontFamily: 'Inter, sans-serif',
         fontVariantNumeric: 'tabular-nums',
         color: C.texto,
@@ -245,71 +249,108 @@ export const ImagemVendas = forwardRef<
         overflow: 'hidden',
       }}
     >
+      {/* título */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
         <div>
-          <div style={{ fontSize: 40, fontWeight: 800 }}>Vendas do dia</div>
-          <div style={{ fontSize: 24, color: C.sec, marginTop: 4 }}>
-            Controle de Vendas · {total > 1 ? `parte ${pagina} de ${total}` : `${d.lista.length} vendas`}
+          <div style={{ fontSize: 40, fontWeight: 800, lineHeight: 1.1 }}>Vendas do dia</div>
+          <div style={{ fontSize: 22, color: C.sec, marginTop: 4 }}>
+            Controle de Vendas · {d.lista.length} vendas{total > 1 ? ` · parte ${pagina} de ${total}` : ''}
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 24, color: C.sec }}>{diaDaSemana(d.data)}</div>
-          <div style={{ fontSize: 48, fontWeight: 800 }}>{dataCurta(d.data)}</div>
+          <div style={{ fontSize: 22, color: C.sec }}>{diaDaSemana(d.data)}</div>
+          <div style={{ fontSize: 46, fontWeight: 800, lineHeight: 1.05 }}>{dataCurta(d.data)}</div>
         </div>
       </div>
 
-      <div style={{ ...cartao, padding: '28px 28px', flex: 1, minHeight: 0 }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-          <colgroup>
-            <col style={{ width: 82 }} />
-            <col style={{ width: 186 }} />
-            <col />
-            <col style={{ width: 56 }} />
-            <col style={{ width: 132 }} />
-            <col style={{ width: 196 }} />
-          </colgroup>
-          <thead>
-            <tr>
-              <th style={th}>Hora</th>
-              <th style={th}>Cliente</th>
-              <th style={th}>Produto</th>
-              <th style={{ ...th, textAlign: 'right' }}>Qtd</th>
-              <th style={{ ...th, textAlign: 'right' }}>Valor</th>
-              <th style={th}>Pagamento</th>
-            </tr>
-          </thead>
-          <tbody>
-            {vendas.map((v) => {
-              const s = situacao[v.venda_id]
-              const fiado = v.pagamento === 'fiado'
-              return (
-                <tr key={v.venda_id} style={{ height: 58, borderTop: `1px solid ${C.borda}` }}>
-                  <td style={{ ...td, color: C.sec }}>{hora(v.hora)}</td>
-                  <td style={{ ...td, fontWeight: 600 }}>{v.cliente ?? '—'}</td>
-                  <td style={td}>{v.produto}</td>
-                  <td style={{ ...td, textAlign: 'right' }}>{v.quantidade}</td>
-                  <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{reais(v.valor)}</td>
-                  <td style={td}>
-                    {fiado ? (
-                      <div style={{ lineHeight: 1.15, color: s ? C.positivo : C.alerta, fontWeight: 700 }}>
-                        <div style={{ fontSize: 21 }}>Fiado</div>
-                        <div style={{ fontSize: 18, fontWeight: 600 }}>
-                          {s ? `pago ${rotuloPg[s.pagamento]} ${dataCurta(s.data).slice(0, 5)}` : 'a receber'}
-                        </div>
-                      </div>
-                    ) : (
-                      rotuloPg[v.pagamento]
-                    )}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+      {/* cabeçalho de resumo (só na primeira página) */}
+      {pagina === 1 && (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+            {[
+              { t: 'Faturamento', v: reais(d.liquido), s: `${unidades} unidades`, cor: C.texto },
+              { t: 'Recebido', v: reais(recebido), s: 'Pix, dinheiro, cartão', cor: C.texto },
+              {
+                t: 'Fiado a receber',
+                v: reais(fiado.aReceber),
+                s: fiado.pago ? `já pago ${reais(fiado.pago)}` : d.pagamentos.fiado ? 'nada pago ainda' : 'sem fiado',
+                cor: fiado.aReceber ? C.alerta : C.texto,
+              },
+              { t: 'Vendas', v: String(d.lista.length), s: `${grupos.length} ${grupos.length === 1 ? 'produto' : 'produtos'}`, cor: C.texto },
+            ].map((k) => (
+              <div key={k.t} style={{ ...cartao, borderRadius: 22, padding: '16px 18px', minWidth: 0 }}>
+                <div style={{ ...rotulo, fontSize: 15 }}>{k.t}</div>
+                <div style={{ fontSize: 30, fontWeight: 800, color: k.cor, whiteSpace: 'nowrap', marginTop: 4 }}>{k.v}</div>
+                <div style={{ fontSize: 17, color: C.sec, marginTop: 2 }}>{k.s}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ ...cartao, borderRadius: 22, padding: '14px 22px', display: 'flex', flexWrap: 'wrap', gap: '8px 28px' }}>
+            {grupos.map((g) => (
+              <div key={g.produto} style={{ fontSize: 21 }}>
+                <b>{g.produto}</b>
+                <span style={{ color: C.sec }}>
+                  {' '}
+                  · {g.quantidade} un. · {reais(g.valor)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* listas por produto */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1, minHeight: 0 }}>
+        {blocos.map((b) => (
+          <div key={`${b.grupo.produto}-${b.vendas[0]?.venda_id}`} style={{ ...cartao, borderRadius: 22, padding: '12px 20px 6px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '0 6px 6px' }}>
+              <div style={{ fontSize: 25, fontWeight: 800 }}>
+                {b.grupo.produto}
+                {b.continuacao && <span style={{ fontSize: 18, fontWeight: 500, color: C.sec }}> (continuação)</span>}
+              </div>
+              <div style={{ fontSize: 20, color: C.sec }}>
+                {b.grupo.quantidade} un. · <b style={{ color: C.texto }}>{reais(b.grupo.valor)}</b>
+              </div>
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+              <colgroup>
+                <col style={{ width: 80 }} />
+                <col />
+                <col style={{ width: 70 }} />
+                <col style={{ width: 130 }} />
+                <col style={{ width: 250 }} />
+              </colgroup>
+              <tbody>
+                {b.vendas.map((v) => {
+                  const s = situacao[v.venda_id]
+                  const ehFiado = v.pagamento === 'fiado'
+                  return (
+                    <tr key={v.venda_id} style={{ height: 39, borderTop: `1px solid ${C.borda}` }}>
+                      <td style={{ ...td, color: C.sec }}>{hora(v.hora)}</td>
+                      <td style={{ ...td, fontWeight: 600 }}>{v.cliente ?? '—'}</td>
+                      <td style={{ ...td, textAlign: 'right', color: C.sec }}>{v.quantidade}×</td>
+                      <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{reais(v.valor)}</td>
+                      <td style={{ ...td, paddingLeft: 18, fontSize: ehFiado ? 19 : 22, fontWeight: ehFiado ? 700 : 400, color: ehFiado ? (s ? C.positivo : C.alerta) : C.texto }}>
+                        {ehFiado
+                          ? s
+                            ? `Fiado pago ${rotuloPg[s.pagamento]} ${dataCurta(s.data).slice(0, 5)}`
+                            : 'Fiado · a receber'
+                          : rotuloPg[v.pagamento]}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        ))}
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 24, color: C.sec }}>
-        <span>Faturamento do dia {reais(d.liquido)}</span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 20, color: C.sec }}>
+        <span>
+          Pix {reais(d.pagamentos.pix)} · Dinheiro {reais(d.pagamentos.dinheiro)} · Cartão {reais(d.pagamentos.cartao)}
+          {d.pagamentos.fiado ? ` · Fiado ${reais(d.pagamentos.fiado)}` : ''}
+        </span>
         <span>{total > 1 ? `${pagina}/${total}` : ''}</span>
       </div>
     </div>

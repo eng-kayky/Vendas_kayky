@@ -308,6 +308,70 @@ export function imagemDoSnapshot(s: Snapshot) {
 /** Situação de cada fiado na data em que a imagem é gerada (o pagamento fica no dia da venda). */
 export type SituacaoFiado = Record<string, { pagamento: FormaRecebimento; data: string }>
 
+// ---------- Lista de vendas da imagem, separada por produto ----------
+
+type VendaImg = DadosImagem['lista'][number]
+
+export interface GrupoProduto {
+  produto: string
+  quantidade: number
+  valor: number
+  vendas: VendaImg[]
+}
+
+/** Agrupa as vendas por produto (na ordem dos produtos do dia) e ordena cada grupo pela hora. */
+export function agruparPorProduto(d: { itens: { nome: string }[]; lista: VendaImg[] }): GrupoProduto[] {
+  const ordem = d.itens.map((i) => i.nome)
+  const grupos = new Map<string, GrupoProduto>()
+  for (const v of d.lista) {
+    const g = grupos.get(v.produto) ?? { produto: v.produto, quantidade: 0, valor: 0, vendas: [] }
+    g.quantidade += v.quantidade
+    g.valor += v.valor
+    g.vendas.push(v)
+    grupos.set(v.produto, g)
+  }
+  const pos = (p: string) => (ordem.indexOf(p) === -1 ? 999 : ordem.indexOf(p))
+  return [...grupos.values()]
+    .sort((a, b) => pos(a.produto) - pos(b.produto) || a.produto.localeCompare(b.produto))
+    .map((g) => ({ ...g, vendas: [...g.vendas].sort((a, b) => a.hora.localeCompare(b.hora)) }))
+}
+
+/** Um bloco da página: título do produto (ou a continuação dele) seguido das vendas que couberem. */
+export interface BlocoPagina {
+  grupo: GrupoProduto
+  continuacao: boolean
+  vendas: VendaImg[]
+}
+
+/**
+ * Distribui os grupos em páginas. `capacidades` = linhas que cabem em cada página
+ * (a primeira tem o cabeçalho de resumo, então cabe menos); um título de produto vale `pesoTitulo` linhas.
+ */
+export function paginarGrupos(grupos: GrupoProduto[], capacidades: { primeira: number; demais: number }, pesoTitulo = 1.3) {
+  const paginas: BlocoPagina[][] = [[]]
+  let livre = capacidades.primeira
+  const novaPagina = () => {
+    paginas.push([])
+    livre = capacidades.demais
+  }
+  for (const g of grupos) {
+    let resto = g.vendas
+    let continuacao = false
+    while (resto.length) {
+      // Título + pelo menos uma linha precisam caber; senão vai para a próxima página
+      if (livre < pesoTitulo + 1) novaPagina()
+      livre -= pesoTitulo
+      const cabe = Math.max(1, Math.floor(livre))
+      const parte = resto.slice(0, cabe)
+      paginas[paginas.length - 1].push({ grupo: g, continuacao, vendas: parte })
+      livre -= parte.length
+      resto = resto.slice(parte.length)
+      continuacao = true
+    }
+  }
+  return paginas.filter((p) => p.length)
+}
+
 /** Quanto do fiado do dia já foi pago e quanto falta, conforme a situação atual. */
 export function totaisFiado(lista: { venda_id: string; valor: number; pagamento: Pagamento }[], situacao: SituacaoFiado) {
   let pago = 0

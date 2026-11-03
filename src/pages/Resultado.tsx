@@ -148,7 +148,7 @@ export default function Resultado() {
             key={i}
             ref={(el) => (nos.current[i + 1] = el)}
             d={dados}
-            vendas={vs}
+            blocos={vs}
             pagina={i + 1}
             total={paginas.length}
             situacao={situacao ?? {}}
