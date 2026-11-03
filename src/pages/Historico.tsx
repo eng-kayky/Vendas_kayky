@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { listarHistorico } from '../lib/api'
-import { dataCurta, diaDaSemana, hojeBelem } from '../lib/datas'
+import { dataCurta, diaDaSemana } from '../lib/datas'
 import { reais } from '../lib/dinheiro'
 import { useCarregar } from '../hooks'
 import { Abas, Aviso, Carregando, Pagina, Topo } from '../components/ui'
@@ -35,7 +35,7 @@ export default function Historico() {
           {dados.map((d) => (
             <li key={d.id}>
               <Link
-                to={d.status === 'fechado' ? `/historico/${d.id}` : d.data === hojeBelem() ? '/' : `/dia/${d.id}`}
+                to={`/historico/${d.id}`}
                 className="cartao flex min-h-16 items-center justify-between gap-3 px-4 py-3 hover:border-destaque/60"
               >
                 <div>

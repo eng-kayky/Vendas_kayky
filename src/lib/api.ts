@@ -441,12 +441,25 @@ export async function detalharLancamento(diaId: string) {
 
 /** Exclui um dia lançado por resumo. Dias com venda a venda não passam por aqui. */
 export async function excluirLancamento(diaId: string) {
+  return excluirDia(diaId)
+}
+
+/**
+ * Apaga o dia inteiro: produtos do dia, vendas, reservas e recebimentos de fiado dessas vendas.
+ * O banco só deixa mexer em dia aberto, então reabre antes. Não dá para desfazer.
+ */
+export async function excluirDia(diaId: string) {
   const atual = await carregarDiaPorId(diaId)
-  if (!atual || atual.dia.snapshot?.tipo !== 'resumo' || atual.itens.length) {
-    throw new Error('Só dá para excluir dias lançados por resumo.')
+  if (!atual) throw new Error('Dia não encontrado.')
+  if (atual.dia.status === 'fechado') await reabrirDia(diaId)
+  const vendaIds = atual.vendas.map((v) => v.id)
+  if (vendaIds.length) {
+    // Recebimentos de fiado prendem a venda (on delete restrict): saem primeiro
+    const r = await supabase.from('fiado_pagamentos').delete().in('venda_id', vendaIds)
+    if (r.error && r.error.code !== '42P01' && r.error.code !== 'PGRST205') throw r.error
   }
-  await reabrirDia(diaId)
-  ok(await supabase.from('dias').delete().eq('id', diaId).select('id'))
+  const apagados = ok(await supabase.from('dias').delete().eq('id', diaId).select('id'))
+  if (!apagados.length) throw new Error('Não foi possível excluir o dia.')
 }
 
 // ---------- Cadastro de produtos ----------

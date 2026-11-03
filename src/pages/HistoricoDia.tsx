@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { carregarDiaPorId, detalharLancamento, mensagemErro, reabrirDia, situacaoFiados, telaDoDia } from '../lib/api'
+import { carregarDiaPorId, detalharLancamento, excluirDia, mensagemErro, reabrirDia, situacaoFiados, telaDoDia } from '../lib/api'
 import { dataCurta, dataLonga, hora } from '../lib/datas'
 import { porcentagem, reais } from '../lib/dinheiro'
 import { imagemDoSnapshot, listarVendasDoDia, PAGAMENTOS } from '../lib/resumo'
@@ -39,6 +39,9 @@ export default function HistoricoDia() {
         <Link to={telaDoDia(dia)} className="btn-primario mt-4 min-h-12 w-full">
           Abrir o dia
         </Link>
+        <div className="mt-6">
+          <ExcluirDia diaId={dia.id} data={dia.data} vendas={dados.vendas.length} />
+        </div>
       </Pagina>
     )
   }
@@ -162,6 +165,10 @@ export default function HistoricoDia() {
             <Icone nome="lapis" tamanho={18} /> Editar vendas deste dia
           </button>
         )}
+
+        <div className="pt-4">
+          <ExcluirDia diaId={dia.id} data={dia.data} vendas={dados.lista.length} />
+        </div>
       </div>
 
       <Confirmar
@@ -177,6 +184,54 @@ export default function HistoricoDia() {
           : 'O dia é reaberto para você corrigir, incluir ou desfazer vendas. Depois toque em Finalizar vendas de novo (com o gasto do dia) para gerar o resumo atualizado.'}
       </Confirmar>
     </Pagina>
+  )
+}
+
+/** Botão de excluir o dia inteiro, com confirmação explícita (não dá para desfazer). */
+function ExcluirDia({ diaId, data, vendas }: { diaId: string; data: string; vendas: number }) {
+  const nav = useNavigate()
+  const online = useOnline()
+  const [aberto, setAberto] = useState(false)
+  const [ocupado, setOcupado] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+
+  async function excluir() {
+    setOcupado(true)
+    setErro(null)
+    try {
+      await excluirDia(diaId)
+      nav('/historico', { replace: true })
+    } catch (e) {
+      setErro(mensagemErro(e))
+      setOcupado(false)
+      setAberto(false)
+    }
+  }
+
+  return (
+    <>
+      {erro && (
+        <div className="mb-2">
+          <Aviso>{erro}</Aviso>
+        </div>
+      )}
+      <button type="button" className="btn-perigo min-h-12 w-full" onClick={() => setAberto(true)} disabled={!online}>
+        Excluir este dia
+      </button>
+      <Confirmar
+        aberto={aberto}
+        titulo={`Excluir o dia ${dataCurta(data)}?`}
+        confirmar="Excluir para sempre"
+        perigo
+        ocupado={ocupado}
+        onConfirmar={excluir}
+        onCancelar={() => setAberto(false)}
+      >
+        Apaga o dia inteiro
+        {vendas ? `, com ${vendas} ${vendas === 1 ? 'venda' : 'vendas'}` : ''}, reservas e recebimentos de fiado desse dia. Some também do
+        relatório. <strong className="text-alerta">Não dá para desfazer.</strong>
+      </Confirmar>
+    </>
   )
 }
 
