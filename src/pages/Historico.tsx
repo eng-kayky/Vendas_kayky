@@ -18,9 +18,14 @@ export default function Historico() {
         <Abas />
       </div>
       {erro && <Aviso>{erro}</Aviso>}
-      <Link to="/lancar" className="btn-secundario mb-4 min-h-12 w-full border-dashed text-claro">
-        + Lançar dia anterior
-      </Link>
+      <div className="mb-4 grid grid-cols-2 gap-2">
+        <Link to="/relatorio" className="btn-primario min-h-12">
+          Relatório semana/mês
+        </Link>
+        <Link to="/lancar" className="btn-secundario min-h-12 border-dashed text-claro">
+          + Lançar dia anterior
+        </Link>
+      </div>
       {carregando && !dados ? (
         <Carregando />
       ) : !dados?.length ? (

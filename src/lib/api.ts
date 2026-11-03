@@ -369,6 +369,19 @@ export async function listarHistorico(): Promise<DiaHistorico[]> {
   })
 }
 
+// ---------- Relatório do período ----------
+
+/** Dias do período: os fechados (com resumo) entram no relatório; os abertos só são avisados. */
+export async function diasDoPeriodo(inicio: string, fim: string) {
+  const dias = ok(
+    await supabase.from('dias').select('id, data, status, snapshot').gte('data', inicio).lte('data', fim).order('data'),
+  )
+  const fechados = dias.filter((d) => d.status === 'fechado' && d.snapshot).map((d) => d.snapshot as Snapshot)
+  const abertos = dias.filter((d) => d.status !== 'fechado').map((d) => ({ id: d.id as string, data: d.data as string }))
+  const fiados = fechados.flatMap((s) => (s.vendas_lista ?? []).filter((v) => v.pagamento === 'fiado').map((v) => v.venda_id))
+  return { fechados, abertos, situacao: await situacaoFiados(fiados) }
+}
+
 // ---------- Dias anteriores lançados por resumo ----------
 
 export async function diaJaExiste(data: string): Promise<boolean> {

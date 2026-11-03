@@ -131,7 +131,9 @@ export function Abas() {
       ? 'produtos'
       : caminho.startsWith('/fiado')
         ? 'fiado'
-        : 'hoje'
+        : caminho.startsWith('/relatorio')
+          ? 'relatorio'
+          : 'hoje'
   const cls = (ativo: boolean) =>
     `btn min-h-11 rounded-full px-5 ${ativo ? 'bg-destaque text-fundo' : 'border border-borda text-texto hover:border-destaque/60'}`
   return (
@@ -141,6 +143,9 @@ export function Abas() {
       </Link>
       <Link to="/historico" className={cls(atual === 'historico')}>
         Histórico
+      </Link>
+      <Link to="/relatorio" className={cls(atual === 'relatorio')}>
+        Relatório
       </Link>
       <Link to="/fiado" className={cls(atual === 'fiado')}>
         Fiado

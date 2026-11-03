@@ -2,6 +2,8 @@
 import { useEffect, useRef, useState } from 'react'
 import ImagemResumo, { gerarPng, ImagemVendas, paginasDeVendas } from '../components/ImagemResumo'
 import { calcularResumo, criarSnapshot, imagemDoSnapshot, listarVendasDoDia, type Pagamento } from '../lib/resumo'
+import { agregarRelatorio, periodoDe } from '../lib/relatorio'
+import ImagemRelatorio from '../components/ImagemRelatorio'
 
 const itens = [
   { id: 'f', nome: 'Empada de frango', produzido: 40, preco: 600 },
@@ -34,7 +36,8 @@ export default function DevImagem() {
   const nos = useRef<(HTMLDivElement | null)[]>([])
   const [pngs, setPngs] = useState<string[]>([])
   const r = calcularResumo(itens, vendas)
-  const dados = imagemDoSnapshot(criarSnapshot('2026-10-29', r, 24500, new Date().toISOString(), listarVendasDoDia(itens, vendas)))
+  const snap = criarSnapshot('2026-10-29', r, 24500, new Date().toISOString(), listarVendasDoDia(itens, vendas))
+  const dados = imagemDoSnapshot(snap)
   const paginas = paginasDeVendas(dados)
 
   useEffect(() => {
@@ -61,6 +64,11 @@ export default function DevImagem() {
             situacao={situacao}
           />
         ))}
+        <ImagemRelatorio
+          ref={(el) => (nos.current[1 + paginas.length] = el)}
+          r={agregarRelatorio([snap, { ...snap, data: '2026-10-27' }, { ...snap, data: '2026-10-28', totais: { ...snap.totais, liquido: 250, lucro: 90 } }], situacao)}
+          periodo={periodoDe('semana', '2026-10-29')}
+        />
       </div>
     </div>
   )
