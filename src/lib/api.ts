@@ -145,6 +145,17 @@ export async function carregarDiaPorId(id: string): Promise<DiaCompleto | null> 
   return d ? completar(paraDia(d)) : null
 }
 
+/** Tela onde o dia é trabalhado: hoje fica em "/", um dia anterior reaberto em "/dia/:id". */
+export function telaDoDia(dia: { id: string; data: string }) {
+  return dia.data === hojeBelem() ? '/' : `/dia/${dia.id}`
+}
+
+/** Dia (com itens e vendas) ao qual um produto do dia pertence. */
+export async function carregarDiaDoItem(itemId: string): Promise<DiaCompleto | null> {
+  const i = okTalvez(await supabase.from('itens_dia').select('dia_id').eq('id', itemId).maybeSingle())
+  return i ? carregarDiaPorId(i.dia_id as string) : null
+}
+
 export async function carregarHoje() {
   return carregarDiaPorData(hojeBelem())
 }
@@ -202,27 +213,46 @@ export async function abrirDia(itens: ProdutoAbrir[]): Promise<string> {
   return ok(await supabase.rpc('abrir_dia', { p_itens: payload })) as string
 }
 
+/**
+ * Venda lançada num dia anterior: a hora real não existe, então grava ao meio-dia de Belém
+ * daquela data (fica dentro do dia certo no histórico e na imagem).
+ */
+export function horaParaDia(data: string): string | undefined {
+  return data < hojeBelem() ? `${data}T15:00:00Z` : undefined
+}
+
 export async function registrarVenda(v: {
   item_dia_id: string
   quantidade: number
   valor_cobrado: number
   pagamento: Pagamento
   cliente: string
+  criado_em?: string
 }) {
   const cliente = v.cliente.trim()
   ok(
-    await supabase.from('vendas').insert({
-      item_dia_id: v.item_dia_id,
-      quantidade: v.quantidade,
-      valor_cobrado: paraBanco(v.valor_cobrado),
-      pagamento: v.pagamento,
-      cliente: cliente || null,
-    }).select('id'),
+    await supabase
+      .from('vendas')
+      .insert({
+        item_dia_id: v.item_dia_id,
+        quantidade: v.quantidade,
+        valor_cobrado: paraBanco(v.valor_cobrado),
+        pagamento: v.pagamento,
+        cliente: cliente || null,
+        ...(v.criado_em ? { criado_em: v.criado_em } : {}),
+      })
+      .select('id'),
   )
 }
 
 /** Separa unidades para o cliente buscar depois (ainda não é venda). */
-export async function registrarReserva(v: { item_dia_id: string; quantidade: number; valor_cobrado: number; cliente: string }) {
+export async function registrarReserva(v: {
+  item_dia_id: string
+  quantidade: number
+  valor_cobrado: number
+  cliente: string
+  criado_em?: string
+}) {
   ok(
     await supabase
       .from('vendas')
@@ -233,6 +263,7 @@ export async function registrarReserva(v: { item_dia_id: string; quantidade: num
         pagamento: null,
         status: 'reservada',
         cliente: v.cliente.trim(),
+        ...(v.criado_em ? { criado_em: v.criado_em } : {}),
       })
       .select('id'),
   )

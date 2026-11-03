@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { carregarDiaPorId, mensagemErro, situacaoFiados, type Dia } from '../lib/api'
 import { dataCurta, diaDaSemana } from '../lib/datas'
-import { imagemDoSnapshot, type SituacaoFiado } from '../lib/resumo'
+import { imagemDoSnapshot, listarVendasDoDia, type SituacaoFiado, type VendaListada } from '../lib/resumo'
 import ImagemResumo, { gerarPng, ImagemVendas, nomeArquivo, paginasDeVendas } from '../components/ImagemResumo'
 import { Aviso, Carregando, Icone, Pagina, Topo } from '../components/ui'
 
 export default function Resultado() {
   const { diaId = '' } = useParams()
   const [dia, setDia] = useState<Dia | null | undefined>(undefined)
+  const [listaGravada, setListaGravada] = useState<VendaListada[]>([])
   const [situacao, setSituacao] = useState<SituacaoFiado | null>(null)
   const [pngs, setPngs] = useState<string[] | null>(null)
   const [erro, setErro] = useState<string | null>(null)
@@ -18,10 +19,14 @@ export default function Resultado() {
   useEffect(() => {
     ;(async () => {
       try {
-        const d = (await carregarDiaPorId(diaId))?.dia ?? null
+        const completo = await carregarDiaPorId(diaId)
+        const d = completo?.dia ?? null
+        // Dias fechados antes desta versão não têm a lista no resumo: usa as vendas gravadas no banco
+        const gravada = completo && !d?.snapshot?.vendas_lista?.length ? listarVendasDoDia(completo.itens, completo.vendas) : []
+        const ids = [...(d?.snapshot?.vendas_lista ?? []), ...gravada].filter((v) => v.pagamento === 'fiado').map((v) => v.venda_id)
         // Situação atual dos fiados desse dia (pago depois aparece aqui, no dia da venda)
-        const fiados = (d?.snapshot?.vendas_lista ?? []).filter((v) => v.pagamento === 'fiado').map((v) => v.venda_id)
-        setSituacao(await situacaoFiados(fiados))
+        setSituacao(await situacaoFiados(ids))
+        setListaGravada(gravada)
         setDia(d)
       } catch (e) {
         setErro(mensagemErro(e))
@@ -30,7 +35,8 @@ export default function Resultado() {
     })()
   }, [diaId])
 
-  const dados = dia?.snapshot ? imagemDoSnapshot(dia.snapshot) : null
+  const doSnapshot = dia?.snapshot ? imagemDoSnapshot(dia.snapshot) : null
+  const dados = doSnapshot && !doSnapshot.lista.length && listaGravada.length ? { ...doSnapshot, lista: listaGravada } : doSnapshot
   const paginas = dados ? paginasDeVendas(dados) : []
 
   // Gera os PNGs depois que os componentes fora da tela foram montados

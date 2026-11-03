@@ -30,8 +30,8 @@ export default function Hoje() {
         <div className="mb-4">
           <Aviso>
             O dia {dataCurta(dados.anterior.data)} ficou aberto.{' '}
-            <Link to={`/finalizar/${dados.anterior.id}`} className="font-bold underline">
-              Finalizar esse dia
+            <Link to={`/dia/${dados.anterior.id}`} className="font-bold underline">
+              Abrir esse dia
             </Link>
           </Aviso>
         </div>
@@ -163,7 +163,7 @@ function DiaFechado({ diaId }: { diaId: string }) {
   )
 }
 
-function DiaAberto({ dia, onMudou }: { dia: DiaCompleto; onMudou: () => void }) {
+export function DiaAberto({ dia, onMudou }: { dia: DiaCompleto; onMudou: () => void }) {
   const online = useOnline()
   const resumo = calcularResumo(dia.itens, dia.vendas)
   const t = resumo.totais

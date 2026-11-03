@@ -30,7 +30,7 @@ export default function Historico() {
           {dados.map((d) => (
             <li key={d.id}>
               <Link
-                to={d.status === 'fechado' ? `/historico/${d.id}` : d.data === hojeBelem() ? '/' : `/finalizar/${d.id}`}
+                to={d.status === 'fechado' ? `/historico/${d.id}` : d.data === hojeBelem() ? '/' : `/dia/${d.id}`}
                 className="cartao flex min-h-16 items-center justify-between gap-3 px-4 py-3 hover:border-destaque/60"
               >
                 <div>

@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   atualizarVenda,
-  carregarHoje,
+  carregarDiaDoItem,
   carregarVenda,
+  horaParaDia,
+  telaDoDia,
   clientesRecentes,
   desfazerVenda,
   mensagemErro,
@@ -12,6 +14,7 @@ import {
   type DiaCompleto,
   type Venda,
 } from '../lib/api'
+import { dataCurta, hojeBelem } from '../lib/datas'
 import { lerReais, numeroBR, porcentagem, reais } from '../lib/dinheiro'
 import { calcularResumo, descontoVenda, exigeCliente, PAGAMENTOS, type Pagamento } from '../lib/resumo'
 import { useOnline } from '../hooks'
@@ -45,10 +48,13 @@ export default function RegistrarVenda() {
   useEffect(() => {
     ;(async () => {
       try {
-        const d = await carregarHoje()
+        // Funciona em qualquer dia aberto (hoje ou um dia anterior reaberto pelo Histórico)
+        let d: DiaCompleto | null = null
         if (vendaId) {
           const v = await carregarVenda(vendaId)
-          if (!v || !d?.itens.some((i) => i.id === v.item_dia_id)) throw new Error('Só dá para alterar vendas do dia aberto hoje.')
+          if (!v) throw new Error('Venda não encontrada.')
+          d = await carregarDiaDoItem(v.item_dia_id)
+          if (d?.dia.status !== 'aberto') throw new Error('Esse dia está fechado. Reabra pelo Histórico para alterar.')
           setVenda(v)
           setQtd(v.quantidade)
           setCobrado(numeroBR(v.valor_cobrado))
@@ -58,6 +64,8 @@ export default function RegistrarVenda() {
             setModo('entregar')
             setPagamento(null)
           } else setPagamento(v.pagamento)
+        } else if (itemId) {
+          d = await carregarDiaDoItem(itemId)
         }
         setDia(d)
       } catch (e) {
@@ -66,7 +74,7 @@ export default function RegistrarVenda() {
       }
     })()
     clientesRecentes().then(setClientes).catch(() => {})
-  }, [vendaId])
+  }, [vendaId, itemId])
 
   const idItem = venda?.item_dia_id ?? itemId
   const linha = dia ? calcularResumo(dia.itens, dia.vendas).itens.find((i) => i.id === idItem) : undefined
@@ -88,6 +96,7 @@ export default function RegistrarVenda() {
     )
   }
 
+  const voltar = telaDoDia(dia.dia)
   const reservando = modo === 'reservar'
   // Ao editar, as unidades desta própria venda/reserva voltam para o disponível
   const disponivel = linha.restante + (venda ? venda.quantidade : 0)
@@ -110,10 +119,11 @@ export default function RegistrarVenda() {
     setEnviando(true)
     try {
       const base = { quantidade: qtd, valor_cobrado: valor, cliente }
-      if (modo === 'vender') await registrarVenda({ ...base, item_dia_id: linha!.id, pagamento: pagamento! })
-      else if (modo === 'reservar') await registrarReserva({ ...base, item_dia_id: linha!.id })
+      const criado_em = horaParaDia(dia!.dia.data)
+      if (modo === 'vender') await registrarVenda({ ...base, item_dia_id: linha!.id, pagamento: pagamento!, criado_em })
+      else if (modo === 'reservar') await registrarReserva({ ...base, item_dia_id: linha!.id, criado_em })
       else await atualizarVenda(venda!.id, { ...base, pagamento: pagamento!, status: modo === 'entregar' ? 'concluida' : undefined })
-      nav('/', { replace: true })
+      nav(voltar, { replace: true })
     } catch (e) {
       setErro(mensagemErro(e))
       setEnviando(false)
@@ -124,7 +134,7 @@ export default function RegistrarVenda() {
     setEnviando(true)
     try {
       await desfazerVenda(venda!.id)
-      nav('/', { replace: true })
+      nav(voltar, { replace: true })
     } catch (e) {
       setErro(mensagemErro(e))
       setEnviando(false)
@@ -140,7 +150,7 @@ export default function RegistrarVenda() {
 
   return (
     <Pagina>
-      <Topo titulo={tituloModo} />
+      <Topo titulo={tituloModo} sub={dia.dia.data !== hojeBelem() ? `Dia ${dataCurta(dia.dia.data)}` : undefined} voltar={voltar} />
       <form
         className="num space-y-3"
         onSubmit={(e) => {

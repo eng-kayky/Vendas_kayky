@@ -7,6 +7,7 @@ import {
   mensagemErro,
   removerItemDia,
   salvarItemDia,
+  telaDoDia,
   type DiaCompleto,
   type Produto,
 } from '../lib/api'
@@ -90,7 +91,7 @@ export default function EditarDia() {
     setOcupado(true)
     try {
       for (const l of mudadas) await salvarItemDia(l.id, l.n!, l.p!)
-      nav('/', { replace: true })
+      nav(telaDoDia(dia!.dia), { replace: true })
     } catch (e) {
       setErro(mensagemErro(e))
       setOcupado(false)
