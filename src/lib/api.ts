@@ -409,6 +409,36 @@ export async function editarLancamento(diaId: string, snapshot: Snapshot) {
   if (!r.length) throw new Error('Não foi possível salvar o lançamento.')
 }
 
+/**
+ * Transforma um dia lançado por resumo em dia venda a venda: reabre com os mesmos produtos e
+ * quantidades (preço = recebido ÷ vendido, ou o do cadastro) para registrar cada venda com o cliente.
+ * O resumo antigo é descartado; os novos totais vêm das vendas registradas.
+ */
+export async function detalharLancamento(diaId: string) {
+  const atual = await carregarDiaPorId(diaId)
+  const s = atual?.dia.snapshot
+  if (!atual || s?.tipo !== 'resumo') throw new Error('Este dia não foi lançado por resumo.')
+  if (atual.itens.length) throw new Error('Este dia já tem produtos registrados.')
+
+  const produtos = await listarProdutos()
+  const itens: { produto: Produto; produzido: number; preco: number }[] = []
+  for (const i of s.itens) {
+    let produto = produtos.find((p) => p.nome.toLocaleLowerCase('pt-BR') === i.nome.toLocaleLowerCase('pt-BR'))
+    const precoMedio = i.vendido ? Math.round((i.faturado * 100) / i.vendido) : 0
+    if (!produto) {
+      // Produto que só existia no lançamento: cadastra como removido, para não aparecer ao abrir o dia
+      const p = ok(
+        await supabase.from('produtos').insert({ nome: i.nome, preco_padrao: paraBanco(precoMedio), ativo: false }).select('id').single(),
+      )
+      produto = { id: p.id, nome: i.nome, preco: precoMedio, ativo: false }
+    }
+    itens.push({ produto, produzido: i.produzido, preco: precoMedio || produto.preco })
+  }
+
+  await reabrirDia(diaId)
+  for (const i of itens) await adicionarItemDia(diaId, i.produto, i.produzido, i.preco)
+}
+
 /** Exclui um dia lançado por resumo. Dias com venda a venda não passam por aqui. */
 export async function excluirLancamento(diaId: string) {
   const atual = await carregarDiaPorId(diaId)

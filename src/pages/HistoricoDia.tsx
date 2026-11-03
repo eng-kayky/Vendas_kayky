@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { carregarDiaPorId, mensagemErro, reabrirDia, situacaoFiados, telaDoDia } from '../lib/api'
+import { carregarDiaPorId, detalharLancamento, mensagemErro, reabrirDia, situacaoFiados, telaDoDia } from '../lib/api'
 import { dataCurta, dataLonga, hora } from '../lib/datas'
 import { porcentagem, reais } from '../lib/dinheiro'
 import { imagemDoSnapshot, listarVendasDoDia, PAGAMENTOS } from '../lib/resumo'
@@ -49,7 +49,8 @@ export default function HistoricoDia() {
     setOcupado(true)
     setErro(null)
     try {
-      await reabrirDia(dia.id)
+      if (d.resumido) await detalharLancamento(dia.id)
+      else await reabrirDia(dia.id)
       nav(telaDoDia(dia), { replace: true })
     } catch (e) {
       setErro(mensagemErro(e))
@@ -134,15 +135,28 @@ export default function HistoricoDia() {
           </section>
         )}
 
+        {d.resumido && (
+          <Aviso tipo="info">
+            Este dia foi lançado por resumo, só com os totais, então não tem os nomes de quem comprou. Para incluir as pessoas, toque em
+            <strong> Registrar venda a venda</strong>: o dia reabre com os mesmos produtos e quantidades para você registrar cada venda com o
+            cliente.
+          </Aviso>
+        )}
+
         {erro && <Aviso>{erro}</Aviso>}
 
         <Link to={`/resultado/${dia.id}`} className="btn-primario min-h-14 w-full text-lg">
           <Icone nome="imagem" /> Gerar imagem de novo
         </Link>
         {d.resumido ? (
-          <Link to={`/lancar/${dia.id}`} className="btn-secundario min-h-12 w-full">
-            <Icone nome="lapis" tamanho={18} /> Editar lançamento
-          </Link>
+          <>
+            <button type="button" className="btn-secundario min-h-12 w-full" onClick={() => setConfirmar(true)} disabled={!online}>
+              <Icone nome="pessoa" tamanho={18} /> Registrar venda a venda (com nomes)
+            </button>
+            <Link to={`/lancar/${dia.id}`} className="btn min-h-12 w-full text-sec">
+              <Icone nome="lapis" tamanho={18} /> Editar só os totais
+            </Link>
+          </>
         ) : (
           <button type="button" className="btn-secundario min-h-12 w-full" onClick={() => setConfirmar(true)} disabled={!online}>
             <Icone nome="lapis" tamanho={18} /> Editar vendas deste dia
@@ -152,14 +166,15 @@ export default function HistoricoDia() {
 
       <Confirmar
         aberto={confirmar}
-        titulo={`Editar as vendas de ${dataCurta(dia.data)}?`}
-        confirmar="Reabrir e editar"
+        titulo={d.resumido ? `Registrar as vendas de ${dataCurta(dia.data)} uma a uma?` : `Editar as vendas de ${dataCurta(dia.data)}?`}
+        confirmar={d.resumido ? 'Reabrir e registrar' : 'Reabrir e editar'}
         ocupado={ocupado}
         onConfirmar={reabrir}
         onCancelar={() => setConfirmar(false)}
       >
-        O dia é reaberto para você corrigir, incluir ou desfazer vendas. Depois toque em Finalizar vendas de novo (com o gasto do dia) para gerar o
-        resumo atualizado.
+        {d.resumido
+          ? `O dia reabre com os mesmos produtos e quantidades. Os totais lançados (${reais(d.liquido)}) são substituídos pelas vendas que você registrar, cada uma com o nome do cliente. No fim, toque em Finalizar vendas para gerar o resumo com a lista de pessoas.`
+          : 'O dia é reaberto para você corrigir, incluir ou desfazer vendas. Depois toque em Finalizar vendas de novo (com o gasto do dia) para gerar o resumo atualizado.'}
       </Confirmar>
     </Pagina>
   )
