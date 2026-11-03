@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { desfazerVenda, mensagemErro, type ItemDia, type Venda } from '../lib/api'
 import { hora } from '../lib/datas'
 import { reais } from '../lib/dinheiro'
-import { descontoVenda, PAGAMENTOS } from '../lib/resumo'
+import { descontoVenda, PAGAMENTOS, type SituacaoFiado } from '../lib/resumo'
 import { useOnline } from '../hooks'
 import { Aviso, Confirmar, Icone } from './ui'
 
@@ -22,12 +22,14 @@ export default function VendasLista({
   aberto,
   modo,
   onMudou,
+  situacao = {},
 }: {
   vendas: Venda[]
   itens: ItemDia[]
   aberto: boolean
   modo: 'tabela' | 'cartoes'
   onMudou: () => void
+  situacao?: SituacaoFiado
 }) {
   const online = useOnline()
   const [alvo, setAlvo] = useState<Venda | null>(null)
@@ -49,6 +51,17 @@ export default function VendasLista({
     } finally {
       setOcupado(false)
     }
+  }
+
+  // Fiado mostra se já foi pago (o pagamento fica no dia da venda)
+  const rotuloPagamento = (v: Venda) => {
+    if (v.pagamento !== 'fiado') return rotuloPg[v.pagamento ?? '']
+    const s = situacao[v.id]
+    return s ? (
+      <span className="font-semibold text-positivo">Fiado pago {rotuloPg[s.pagamento]}</span>
+    ) : (
+      <span className="font-semibold text-alerta">Fiado · a receber</span>
+    )
   }
 
   // Reservas aparecem à parte, na tela Hoje
@@ -117,7 +130,7 @@ export default function VendasLista({
                   <td className="px-3 py-2 text-right">
                     <Desconto valor={desconto} />
                   </td>
-                  <td className="px-3 py-2">{rotuloPg[v.pagamento ?? '']}</td>
+                  <td className="px-3 py-2">{rotuloPagamento(v)}</td>
                   {aberto && <td className="px-1 py-1">{botaoDesfazer(v)}</td>}
                 </tr>
               ))}
@@ -137,7 +150,7 @@ export default function VendasLista({
                 </div>
                 <div className="flex items-baseline justify-between gap-2 text-sm text-sec">
                   <span className="truncate">
-                    {hora(v.criado_em)} · {rotuloPg[v.pagamento ?? '']} · {v.cliente || 'sem nome'}
+                    {hora(v.criado_em)} · {rotuloPagamento(v)} · {v.cliente || 'sem nome'}
                   </span>
                   <span className="shrink-0">
                     <Desconto valor={desconto} />

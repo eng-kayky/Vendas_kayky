@@ -1,4 +1,4 @@
-import { carregarHoje } from '../lib/api'
+import { carregarHoje, situacaoFiados } from '../lib/api'
 import { dataLonga, hojeBelem } from '../lib/datas'
 import { reais } from '../lib/dinheiro'
 import { calcularResumo } from '../lib/resumo'
@@ -7,7 +7,11 @@ import { Aviso, Carregando, Pagina, Topo } from '../components/ui'
 import VendasLista from '../components/VendasLista'
 
 export default function VendasHoje() {
-  const { dados, erro, carregando, recarregar } = useCarregar(carregarHoje, [], 20000)
+  const { dados, erro, carregando, recarregar } = useCarregar(async () => {
+    const d = await carregarHoje()
+    const ids = (d?.vendas ?? []).filter((v) => v.pagamento === 'fiado').map((v) => v.id)
+    return d ? { ...d, situacao: await situacaoFiados(ids) } : null
+  }, [], 20000)
   const t = dados ? calcularResumo(dados.itens, dados.vendas).totais : null
 
   return (
@@ -42,6 +46,7 @@ export default function VendasHoje() {
             aberto={dados.dia.status === 'aberto'}
             modo="cartoes"
             onMudou={recarregar}
+            situacao={dados.situacao}
           />
         </>
       )}
