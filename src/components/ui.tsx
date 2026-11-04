@@ -49,23 +49,78 @@ export function TituloSecao({ titulo, sub, acao }: { titulo: string; sub?: strin
   )
 }
 
-export function Pagina({ children, largura = 'max-w-lg', comNav = false }: { children: ReactNode; largura?: string; comNav?: boolean }) {
+export function Pagina({ children, largura = 'max-w-xl', comNav = false }: { children: ReactNode; largura?: string; comNav?: boolean }) {
   return (
-    <main className={`mx-auto w-full ${largura} px-4 pt-[max(env(safe-area-inset-top),12px)] md:pt-6 ${comNav ? 'pb-44 md:pb-16' : 'pb-32'}`}>
+    <main
+      className={`mx-auto w-full ${largura} px-4 pt-[max(env(safe-area-inset-top),12px)] md:px-6 md:pt-8 ${
+        comNav ? 'pb-[calc(88px+env(safe-area-inset-bottom))] md:pb-12' : 'pb-6 md:pb-12'
+      }`}
+    >
       {children}
     </main>
   )
 }
 
-/** Barra fixa no rodapé para o botão principal (acima da navegação, quando houver) */
+/**
+ * Barra do botão principal. Fica no fim do conteúdo e "gruda" embaixo enquanto rola
+ * (sticky): ocupa o próprio espaço, então nunca cobre nada da página.
+ */
 export function Rodape({ children, comNav = false }: { children: ReactNode; comNav?: boolean }) {
   return (
     <div
-      className={`fixed inset-x-0 z-20 border-t border-borda/60 bg-fundo/90 px-4 pt-3 backdrop-blur ${
-        comNav ? 'bottom-[calc(64px+env(safe-area-inset-bottom))] pb-3 md:bottom-0 md:pb-4' : 'bottom-0 pb-[max(env(safe-area-inset-bottom),16px)]'
+      className={`sticky z-20 -mx-4 mt-6 border-t border-borda/60 bg-fundo/85 px-4 pt-3 backdrop-blur-md md:mx-0 md:rounded-2xl md:border md:px-4 md:pb-3 ${
+        comNav ? 'bottom-[calc(64px+env(safe-area-inset-bottom))] pb-3 md:bottom-4' : 'bottom-0 pb-[max(env(safe-area-inset-bottom),12px)] md:bottom-4'
       }`}
     >
-      <div className="mx-auto max-w-lg">{children}</div>
+      {children}
+    </div>
+  )
+}
+
+/** Bloco com título (e ação opcional à direita) */
+export function Secao({ titulo, sub, acao, children, className = '' }: { titulo?: string; sub?: string; acao?: ReactNode; children: ReactNode; className?: string }) {
+  return (
+    <section className={`cartao p-4 md:p-5 ${className}`}>
+      {(titulo || acao) && (
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            {titulo && <h2 className="text-base font-bold md:text-lg">{titulo}</h2>}
+            {sub && <p className="text-xs text-sec md:text-sm">{sub}</p>}
+          </div>
+          {acao}
+        </div>
+      )}
+      {children}
+    </section>
+  )
+}
+
+/** Número de destaque com rótulo, cor opcional e linha de apoio */
+export function Indicador({
+  rotulo,
+  valor,
+  sub,
+  cor = 'texto',
+  grande = false,
+  ponto,
+}: {
+  rotulo: string
+  valor: string
+  sub?: ReactNode
+  cor?: 'texto' | 'positivo' | 'alerta' | 'claro'
+  grande?: boolean
+  ponto?: 'positivo' | 'alerta' | 'claro'
+}) {
+  const corTexto = { texto: '', positivo: 'text-positivo', alerta: 'text-alerta', claro: 'text-claro' }[cor]
+  const corPonto = ponto && { positivo: 'bg-positivo', alerta: 'bg-alerta', claro: 'bg-claro' }[ponto]
+  return (
+    <div className="num min-w-0">
+      <p className="rotulo flex items-center gap-1.5">
+        {corPonto && <span className={`size-2 rounded-full ${corPonto}`} />}
+        {rotulo}
+      </p>
+      <p className={`mt-1 truncate font-extrabold leading-tight ${grande ? 'text-4xl md:text-5xl' : 'text-[17px] sm:text-2xl'} ${corTexto}`}>{valor}</p>
+      {sub && <div className="mt-1 text-xs leading-snug text-sec">{sub}</div>}
     </div>
   )
 }

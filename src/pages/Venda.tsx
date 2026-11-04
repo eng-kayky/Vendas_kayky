@@ -161,15 +161,17 @@ export default function Venda({ exemplo }: { exemplo?: { d: DiaCompleto; produto
     : `${{ vender: 'Confirmar venda', reservar: 'Reservar', editar: 'Salvar alterações', entregar: 'Entregar' }[modo]} · ${cobrado === null ? '—' : reais(cobrado)}`
 
   return (
-    <Pagina largura="max-w-3xl">
+    <Pagina largura="max-w-6xl">
       <Topo titulo={titulo} sub={d.dia.data !== hojeBelem() ? `Dia ${dataCurta(d.dia.data)}` : undefined} voltar={voltar} />
       <form
-        className="num space-y-4"
+        className="num grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start lg:gap-6"
         onSubmit={(e) => {
           e.preventDefault()
           enviar()
         }}
       >
+        {/* esquerda: produtos */}
+        <div className="min-w-0 space-y-4">
         {!pedidoId && (
           <div className="grid grid-cols-2 gap-1 rounded-2xl border border-borda bg-cartao p-1" role="tablist" aria-label="Tipo">
             {(['vender', 'reservar'] as const).map((m) => (
@@ -235,8 +237,13 @@ export default function Venda({ exemplo }: { exemplo?: { d: DiaCompleto; produto
           </div>
         </section>
 
+        </div>
+
+        {/* direita: carrinho, pagamento e cliente (acompanha a rolagem no computador) */}
+        <div className="space-y-4 lg:sticky lg:top-6">
         {/* total */}
-        <section className="cartao space-y-3 p-4">
+        <section className="painel space-y-3 p-4">
+          <h2 className="rotulo">Carrinho</h2>
           {carrinho.length === 0 ? (
             <p className="text-center text-sec">Toque nos produtos para montar a venda.</p>
           ) : (
@@ -370,6 +377,7 @@ export default function Venda({ exemplo }: { exemplo?: { d: DiaCompleto; produto
             </p>
           )}
         </Rodape>
+        </div>
       </form>
 
       <Confirmar

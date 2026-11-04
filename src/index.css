@@ -1,13 +1,14 @@
 @import "tailwindcss";
 
 @theme {
-  --color-fundo: #060C22;
-  --color-cartao: #0D1735;
-  --color-borda: #1B2A5C;
+  --color-fundo: #070C1E;
+  --color-cartao: #0E1631;
+  --color-elevado: #131D3E;
+  --color-borda: #1E2A52;
   --color-destaque: #4B8DFF;
   --color-claro: #8AB4FF;
   --color-texto: #EEF2FF;
-  --color-sec: #9DB0DC;
+  --color-sec: #93A4CC;
   --color-alerta: #FF9AA8;
   --color-positivo: #3DDC97;
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
@@ -20,36 +21,64 @@
   }
   body {
     @apply bg-fundo text-texto font-sans antialiased;
-    background-image: radial-gradient(120% 60% at 50% 0%, #0B1638 0%, #060C22 70%);
+    background-image: radial-gradient(110% 50% at 50% 0%, #0C1736 0%, #070C1E 70%);
     background-attachment: fixed;
     min-height: 100dvh;
     overflow-x: hidden;
   }
-  input, button, select {
+  input,
+  button,
+  select,
+  textarea {
     font: inherit;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-destaque);
+    outline-offset: 2px;
   }
   .num {
     font-variant-numeric: tabular-nums;
   }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-borda);
+    border-radius: 999px;
+  }
 }
 
+/* superfícies */
 @utility cartao {
-  @apply rounded-2xl border border-borda bg-cartao;
+  @apply rounded-2xl border border-borda/80 bg-cartao;
 }
+@utility painel {
+  @apply rounded-2xl border border-borda bg-elevado shadow-[0_10px_30px_-12px_rgba(0,0,0,0.6)];
+}
+
+/* texto */
 @utility rotulo {
   @apply text-[11px] font-semibold uppercase tracking-[0.12em] text-sec;
 }
+
+/* formulário */
 @utility campo {
-  @apply min-h-12 w-full rounded-xl border border-borda bg-fundo/60 px-3 text-lg font-semibold text-texto outline-none transition focus:border-destaque focus:ring-2 focus:ring-destaque/30;
+  @apply min-h-12 w-full rounded-xl border border-borda bg-fundo/70 px-3 text-lg font-semibold text-texto outline-none transition placeholder:font-normal placeholder:text-sec/60 focus:border-destaque focus:ring-2 focus:ring-destaque/30;
 }
+
+/* botões */
 @utility btn {
   @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 font-bold transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
 }
 @utility btn-primario {
-  @apply btn bg-destaque text-fundo hover:brightness-110;
+  @apply btn bg-destaque text-fundo shadow-[0_8px_20px_-8px_rgba(75,141,255,0.7)] hover:brightness-110;
 }
 @utility btn-secundario {
-  @apply btn border border-borda bg-cartao text-texto hover:border-destaque/60;
+  @apply btn border border-borda bg-cartao text-texto hover:border-destaque/60 hover:bg-elevado;
+}
+@utility btn-fantasma {
+  @apply btn text-sec hover:bg-elevado hover:text-texto;
 }
 @utility btn-perigo {
   @apply btn border border-alerta/40 bg-alerta/10 text-alerta hover:bg-alerta/20;
