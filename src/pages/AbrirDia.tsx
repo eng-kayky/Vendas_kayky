@@ -1,170 +1,178 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { abrirDia, carregarHoje, criarProduto, mensagemErro, produtosParaAbrir, removerProduto } from '../lib/api'
-import { diaMes, diaDaSemana, hojeBelem } from '../lib/datas'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { abrirDia, carregarDiaPorData, criarProduto, listarProdutos, mensagemErro } from '../lib/api'
+import { dataLonga, hojeBelem } from '../lib/datas'
 import { lerReais, numeroBR, reais } from '../lib/dinheiro'
+import { UNIDADES, type Produto } from '../lib/tipos'
 import { useOnline } from '../hooks'
-import { Aviso, Carregando, Confirmar, Pagina, Rodape, Topo } from '../components/ui'
+import { Aviso, Campo, Carregando, Icone, Pagina, Rodape, Topo } from '../components/ui'
 
 interface Linha {
-  produto_id: string
-  nome: string
-  produzido: string
+  produto: Produto
+  marcado: boolean
+  quantidade: string // vazio = sem controle de estoque
   preco: string
 }
 
-const paraLinha = (p: { produto_id: string; nome: string; produzido: number; preco: number }): Linha => ({
-  produto_id: p.produto_id,
-  nome: p.nome,
-  produzido: '', // começa limpo todo dia; só o preço vem do último dia
-  preco: p.preco ? numeroBR(p.preco) : '',
-})
+const lerQtd = (s: string) => (s.trim() === '' ? null : /^\d+$/.test(s.trim()) ? Number(s.trim()) : NaN)
 
-const lerInteiro = (s: string) => (s.trim() === '' ? 0 : /^\d+$/.test(s.trim()) ? Number(s.trim()) : null)
-
+/** Abrir um dia de vendas (hoje ou outra data) escolhendo os produtos, preço e quantidade. */
 export default function AbrirDia() {
   const nav = useNavigate()
   const online = useOnline()
+  const [busca] = useSearchParams()
   const hoje = hojeBelem()
+  const [data, setData] = useState(busca.get('data') ?? hoje)
+  const [outraData, setOutraData] = useState(Boolean(busca.get('outra') || busca.get('data')))
   const [linhas, setLinhas] = useState<Linha[] | null>(null)
+  const [novo, setNovo] = useState<{ nome: string; preco: string; unidade: string } | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
-  const [novo, setNovo] = useState<{ nome: string; preco: string } | null>(null)
-  const [remover, setRemover] = useState<Linha | null>(null)
-  const [removendo, setRemovendo] = useState(false)
+  const [diaExistente, setDiaExistente] = useState<string | null>(null)
 
   useEffect(() => {
-    ;(async () => {
-      try {
-        if (await carregarHoje()) return nav('/', { replace: true })
-        const ps = (await produtosParaAbrir()).map(paraLinha)
-        setLinhas(ps)
-        if (!ps.length) setNovo({ nome: '', preco: '' })
-      } catch (e) {
+    listarProdutos()
+      .then((ps) => {
+        const ativos = ps.filter((p) => p.ativo)
+        setLinhas(ativos.map((p) => ({ produto: p, marcado: true, quantidade: '', preco: p.preco ? numeroBR(p.preco) : '' })))
+        if (!ativos.length) setNovo({ nome: '', preco: '', unidade: 'un' })
+      })
+      .catch((e) => {
         setErro(mensagemErro(e))
         setLinhas([])
-      }
-    })()
-  }, [nav])
+      })
+  }, [])
 
-  const alterar = (i: number, campo: keyof Linha, valor: string) =>
-    setLinhas((ls) => ls!.map((l, j) => (j === i ? { ...l, [campo]: valor } : l)))
+  // Avisa se já existe dia nessa data
+  useEffect(() => {
+    carregarDiaPorData(data)
+      .then((d) => setDiaExistente(d?.dia.id ?? null))
+      .catch(() => setDiaExistente(null))
+  }, [data])
 
-  // Produto com quantidade vazia ou 0 fica fora do dia
-  const lidas = (linhas ?? []).map((l) => ({ ...l, n: lerInteiro(l.produzido), p: lerReais(l.preco) }))
-  const doDia = lidas.filter((l) => l.n !== null && l.n > 0)
-  const invalidas = lidas.filter((l) => l.n === null || (l.n! > 0 && l.p === null))
-  const venderTudo = doDia.reduce((s, l) => s + l.n! * (l.p ?? 0), 0)
-  const unidades = doDia.reduce((s, l) => s + l.n!, 0)
+  const alterar = (i: number, campos: Partial<Linha>) => setLinhas((ls) => ls!.map((l, j) => (j === i ? { ...l, ...campos } : l)))
+
+  const escolhidos = (linhas ?? []).filter((l) => l.marcado)
+  const lidos = escolhidos.map((l) => ({ ...l, q: lerQtd(l.quantidade), p: lerReais(l.preco) }))
+  const invalidos = lidos.filter((l) => Number.isNaN(l.q) || l.p === null)
+  const comEstoque = lidos.filter((l) => typeof l.q === 'number' && !Number.isNaN(l.q))
+  const podeVenderTudo = comEstoque.length === lidos.length && lidos.length > 0
+  const totalPossivel = comEstoque.reduce((s, l) => s + (l.q ?? 0) * (l.p ?? 0), 0)
 
   async function abrir() {
-    if (invalidas.length) return setErro(`Confira quantidade e preço de: ${invalidas.map((l) => l.nome).join(', ')}.`)
-    if (!doDia.length) return setErro('Informe a quantidade de pelo menos um produto.')
+    if (data > hoje) return setErro('Não dá para abrir um dia no futuro.')
+    if (diaExistente) return setErro('Já existe um dia nessa data.')
+    if (!lidos.length) return setErro('Escolha ao menos um produto.')
+    if (invalidos.length) return setErro(`Confira preço e quantidade de: ${invalidos.map((l) => l.produto.nome).join(', ')}.`)
     setErro(null)
     setEnviando(true)
     try {
-      await abrirDia(doDia.map((l) => ({ produto_id: l.produto_id, nome: l.nome, produzido: l.n!, preco: l.p! })))
-      nav('/', { replace: true })
+      const id = await abrirDia(
+        data,
+        lidos.map((l) => ({ produtoId: l.produto.id, produzido: l.q as number | null, preco: l.p! })),
+      )
+      nav(data === hoje ? '/' : `/dia/${id}`, { replace: true })
     } catch (e) {
       setErro(mensagemErro(e))
-    } finally {
       setEnviando(false)
     }
   }
 
-  async function adicionar() {
+  async function adicionarNovo() {
     if (!novo) return
-    const nome = novo.nome.trim()
     const preco = lerReais(novo.preco)
-    if (!nome || preco === null) return setErro('Preencha o nome e o preço do produto.')
-    if (linhas?.some((l) => l.nome.toLocaleLowerCase('pt-BR') === nome.toLocaleLowerCase('pt-BR')))
-      return setErro('Já existe um produto com esse nome.')
+    if (!novo.nome.trim() || preco === null) return setErro('Preencha o nome e o preço do produto novo.')
     setErro(null)
     try {
-      const id = await criarProduto(nome, preco)
-      setLinhas((ls) => [...(ls ?? []), paraLinha({ produto_id: id, nome, produzido: 0, preco })])
+      const p = await criarProduto({ nome: novo.nome, preco, unidade: novo.unidade, categoria: null })
+      setLinhas((ls) => [...(ls ?? []).filter((l) => l.produto.id !== p.id), { produto: p, marcado: true, quantidade: '', preco: numeroBR(p.preco) }])
       setNovo(null)
     } catch (e) {
       setErro(mensagemErro(e))
     }
   }
 
-  async function confirmarRemocao() {
-    if (!remover) return
-    setRemovendo(true)
-    try {
-      await removerProduto(remover.produto_id)
-      setLinhas((ls) => ls!.filter((l) => l.produto_id !== remover.produto_id))
-      setRemover(null)
-    } catch (e) {
-      setErro(mensagemErro(e))
-      setRemover(null)
-    } finally {
-      setRemovendo(false)
-    }
-  }
-
   return (
     <Pagina>
-      <Topo titulo="Abrir o dia" sub={`${diaDaSemana(hoje)}, ${diaMes(hoje)}`} />
+      <Topo titulo="Abrir dia de vendas" sub={dataLonga(data)} voltar={-1} />
       {linhas === null ? (
         <Carregando />
       ) : (
         <div className="space-y-3">
-          <p className="text-sm text-sec">
-            {linhas.length
-              ? 'Informe quanto tem de cada produto hoje. Deixe em branco o que não vai vender.'
-              : 'Cadastre os produtos que vai vender hoje.'}
+          <section className="cartao space-y-2 p-4">
+            {outraData ? (
+              <>
+                <label htmlFor="data" className="rotulo block">
+                  Data do dia
+                </label>
+                <input id="data" type="date" className="campo" value={data} max={hoje} onChange={(e) => setData(e.target.value || hoje)} />
+                <p className="text-xs text-sec">Para lançar um dia que já passou. As vendas entram com essa data.</p>
+              </>
+            ) : (
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-semibold">Hoje, {dataLonga(hoje).split(', ')[1]}</p>
+                <button type="button" className="text-sm font-semibold text-claro underline" onClick={() => setOutraData(true)}>
+                  Outra data
+                </button>
+              </div>
+            )}
+            {diaExistente && (
+              <Aviso>
+                Já existe um dia nessa data.{' '}
+                <Link to={data === hoje ? '/' : `/dia/${diaExistente}`} className="font-bold underline">
+                  Abrir esse dia
+                </Link>
+              </Aviso>
+            )}
+          </section>
+
+          <p className="px-1 text-sm text-sec">
+            Marque o que vai vender. <strong className="text-texto">Quantidade</strong> é opcional: deixe em branco para vender sem controle de estoque.
           </p>
 
           {linhas.map((l, i) => (
-            <fieldset key={l.produto_id} className="cartao p-4">
-              <legend className="sr-only">{l.nome}</legend>
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <h2 className="truncate text-lg font-bold" aria-hidden>
-                  {l.nome}
-                </h2>
-                <button
-                  type="button"
-                  className="min-h-11 shrink-0 rounded-xl px-3 text-sm text-sec hover:bg-alerta/10 hover:text-alerta"
-                  onClick={() => setRemover(l)}
-                  disabled={!online}
-                >
-                  Remover
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <Campo id={`n-${i}`} rotulo="Quantidade" valor={l.produzido} onChange={(v) => alterar(i, 'produzido', v)} modo="numeric" />
-                <Campo id={`p-${i}`} rotulo="Preço (R$)" valor={l.preco} onChange={(v) => alterar(i, 'preco', v)} />
-              </div>
+            <fieldset key={l.produto.id} className={`cartao p-4 ${l.marcado ? '' : 'opacity-60'}`}>
+              <legend className="sr-only">{l.produto.nome}</legend>
+              <label className="flex min-h-11 cursor-pointer items-center gap-3">
+                <input type="checkbox" className="size-5 accent-[#4B8DFF]" checked={l.marcado} onChange={(e) => alterar(i, { marcado: e.target.checked })} />
+                <span className="min-w-0 flex-1 truncate text-lg font-bold">{l.produto.nome}</span>
+                <span className="text-sm text-sec">por {l.produto.unidade}</span>
+              </label>
+              {l.marcado && (
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <Campo id={`q-${i}`} rotulo="Quantidade" valor={l.quantidade} onChange={(v) => alterar(i, { quantidade: v })} modo="numeric" placeholder="sem limite" />
+                  <Campo id={`p-${i}`} rotulo="Preço (R$)" valor={l.preco} onChange={(v) => alterar(i, { preco: v })} modo="decimal" placeholder="0,00" />
+                </div>
+              )}
             </fieldset>
           ))}
 
           {novo ? (
             <fieldset className="cartao space-y-3 border-dashed p-4">
               <legend className="sr-only">Produto novo</legend>
-              <div className="space-y-1.5">
-                <label htmlFor="novo-nome" className="rotulo">
-                  Nome do produto
-                </label>
-                <input
-                  id="novo-nome"
-                  className="campo"
-                  value={novo.nome}
-                  autoFocus
-                  autoCapitalize="sentences"
-                  onChange={(e) => setNovo({ ...novo, nome: e.target.value })}
-                />
+              <Campo id="novo-nome" rotulo="Nome do produto" valor={novo.nome} onChange={(v) => setNovo({ ...novo, nome: v })} modo="text" autoFocus />
+              <div className="grid grid-cols-2 gap-2">
+                <Campo id="novo-preco" rotulo="Preço (R$)" valor={novo.preco} onChange={(v) => setNovo({ ...novo, preco: v })} modo="decimal" />
+                <div className="space-y-1.5">
+                  <label htmlFor="novo-un" className="rotulo block">
+                    Unidade
+                  </label>
+                  <input id="novo-un" className="campo" list="unidades" value={novo.unidade} onChange={(e) => setNovo({ ...novo, unidade: e.target.value })} />
+                  <datalist id="unidades">
+                    {UNIDADES.map((u) => (
+                      <option key={u} value={u} />
+                    ))}
+                  </datalist>
+                </div>
               </div>
-              <Campo id="novo-preco" rotulo="Preço (R$)" valor={novo.preco} onChange={(v) => setNovo({ ...novo, preco: v })} />
               <div className="flex gap-2">
                 {linhas.length > 0 && (
                   <button type="button" className="btn-secundario flex-1" onClick={() => setNovo(null)}>
                     Cancelar
                   </button>
                 )}
-                <button type="button" className="btn-primario flex-1" onClick={adicionar} disabled={!online}>
-                  Adicionar
+                <button type="button" className="btn-primario flex-1" onClick={adicionarNovo} disabled={!online}>
+                  Cadastrar produto
                 </button>
               </div>
             </fieldset>
@@ -172,22 +180,24 @@ export default function AbrirDia() {
             <button
               type="button"
               className="btn min-h-14 w-full rounded-2xl border border-dashed border-borda text-claro hover:border-destaque"
-              onClick={() => setNovo({ nome: '', preco: '' })}
+              onClick={() => setNovo({ nome: '', preco: '', unidade: 'un' })}
             >
-              + Adicionar produto
+              <Icone nome="mais" /> Cadastrar produto novo
             </button>
           )}
 
-          {doDia.length > 0 && (
+          {lidos.length > 0 && (
             <div className="cartao num space-y-1.5 p-4">
               <div className="flex justify-between">
-                <span className="text-sec">Unidades para vender</span>
-                <span className="font-bold">{unidades}</span>
+                <span className="text-sec">Produtos no dia</span>
+                <span className="font-bold">{lidos.length}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-sec">Se vender tudo</span>
-                <span className="font-bold text-positivo">{reais(venderTudo)}</span>
-              </div>
+              {podeVenderTudo && (
+                <div className="flex justify-between">
+                  <span className="text-sec">Se vender tudo</span>
+                  <span className="font-bold text-positivo">{reais(totalPossivel)}</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -195,53 +205,10 @@ export default function AbrirDia() {
         </div>
       )}
       <Rodape>
-        <button type="button" className="btn-primario min-h-14 w-full text-lg" onClick={abrir} disabled={enviando || !online || !linhas}>
-          {enviando ? 'Abrindo…' : 'Abrir o dia'}
+        <button type="button" className="btn-primario min-h-14 w-full text-lg" onClick={abrir} disabled={enviando || !online || !linhas || Boolean(diaExistente)}>
+          {enviando ? 'Abrindo…' : data === hoje ? 'Abrir o dia de hoje' : `Abrir o dia ${data.split('-').reverse().join('/')}`}
         </button>
       </Rodape>
-
-      <Confirmar
-        aberto={remover !== null}
-        titulo={`Remover "${remover?.nome}"?`}
-        confirmar="Remover"
-        perigo
-        ocupado={removendo}
-        onConfirmar={confirmarRemocao}
-        onCancelar={() => setRemover(null)}
-      >
-        Ele sai da lista de produtos. As vendas antigas continuam no histórico. Se cadastrar de novo com o mesmo nome, ele volta.
-      </Confirmar>
     </Pagina>
-  )
-}
-
-function Campo({
-  id,
-  rotulo,
-  valor,
-  onChange,
-  modo = 'decimal',
-}: {
-  id: string
-  rotulo: string
-  valor: string
-  onChange: (v: string) => void
-  modo?: 'numeric' | 'decimal'
-}) {
-  return (
-    <div className="min-w-0 space-y-1.5">
-      <label htmlFor={id} className="rotulo block truncate">
-        {rotulo}
-      </label>
-      <input
-        id={id}
-        className="campo num"
-        inputMode={modo}
-        placeholder="0"
-        value={valor}
-        onChange={(e) => onChange(e.target.value)}
-        onFocus={(e) => e.target.select()}
-      />
-    </div>
   )
 }

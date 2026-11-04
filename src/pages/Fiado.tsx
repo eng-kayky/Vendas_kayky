@@ -1,58 +1,48 @@
 import { useState } from 'react'
-import { alterarRecebimento, desfazerRecebimento, listarFiados, mensagemErro, receberFiado, type Fiado as FiadoT } from '../lib/api'
+import { Link } from 'react-router-dom'
+import { desfazerRecebimento, listarFiados, mensagemErro, receberFiados, trocarFormaRecebimento, type Fiado as FiadoT } from '../lib/api'
 import { dataCurta, diaDaSemana } from '../lib/datas'
 import { reais } from '../lib/dinheiro'
-import { FORMAS_RECEBIMENTO, type FormaRecebimento } from '../lib/resumo'
+import { FORMAS_RECEBIMENTO, ROTULO_PAGAMENTO, type FormaRecebimento } from '../lib/tipos'
 import { useCarregar, useOnline } from '../hooks'
-import { Abas, Aviso, Carregando, Confirmar, Icone, Pagina, Topo } from '../components/ui'
+import { Aviso, Carregando, Confirmar, Escolha, Icone, Pagina, Selo, TituloSecao, Vazio } from '../components/ui'
 
-const rotulo = Object.fromEntries(FORMAS_RECEBIMENTO.map((f) => [f.valor, f.rotulo])) as Record<FormaRecebimento, string>
-
-interface Cliente {
+interface Devedor {
+  clienteId: string
   nome: string
   total: number
-  vendas: FiadoT[]
+  fiados: FiadoT[]
 }
 
-/** O que vai ser recebido: uma venda ou todas as de um cliente. */
-interface Recebimento {
-  titulo: string
-  vendas: FiadoT[]
-}
-
+/** Quem deve, quanto, e o que já foi recebido. */
 export default function Fiado() {
   const online = useOnline()
   const { dados, erro: erroCarga, carregando, recarregar } = useCarregar(listarFiados, [], 30000)
   const [aba, setAba] = useState<'abertos' | 'recebidos'>('abertos')
-  const [receber, setReceber] = useState<Recebimento | null>(null)
-  const [forma, setForma] = useState<FormaRecebimento>('pix')
-  const [desfazer, setDesfazer] = useState<FiadoT | null>(null)
+  const [receber, setReceber] = useState<{ titulo: string; fiados: FiadoT[] } | null>(null)
   const [trocar, setTrocar] = useState<FiadoT | null>(null)
+  const [desfazer, setDesfazer] = useState<FiadoT | null>(null)
+  const [forma, setForma] = useState<FormaRecebimento>('pix')
   const [ocupado, setOcupado] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
 
-  const abertos = dados?.filter((f) => !f.recebimento) ?? []
-  const recebidos = (dados?.filter((f) => f.recebimento) ?? [])
-    .sort((a, b) => b.recebimento!.data.localeCompare(a.recebimento!.data))
-    .slice(0, 60)
+  const abertos = dados?.filter((f) => !f.pagoEm) ?? []
+  const recebidos = (dados?.filter((f) => f.pagoEm) ?? []).sort((a, b) => b.pagoEm!.localeCompare(a.pagoEm!)).slice(0, 80)
   const totalAberto = abertos.reduce((s, f) => s + f.valor, 0)
 
-  // A receber, por cliente (sem diferenciar maiúsculas), quem deve mais primeiro
-  const porCliente = new Map<string, Cliente>()
+  const porCliente = new Map<string, Devedor>()
   for (const f of abertos) {
-    const chave = f.cliente.toLocaleLowerCase('pt-BR')
-    const g = porCliente.get(chave) ?? { nome: f.cliente, total: 0, vendas: [] }
+    const g = porCliente.get(f.clienteId) ?? { clienteId: f.clienteId, nome: f.cliente, total: 0, fiados: [] }
     g.total += f.valor
-    g.vendas.push(f)
-    porCliente.set(chave, g)
+    g.fiados.push(f)
+    porCliente.set(f.clienteId, g)
   }
-  const clientes = [...porCliente.values()]
-    .map((c) => ({ ...c, vendas: [...c.vendas].sort((a, b) => a.data.localeCompare(b.data)) }))
+  const devedores = [...porCliente.values()]
+    .map((g) => ({ ...g, fiados: [...g.fiados].sort((a, b) => a.data.localeCompare(b.data)) }))
     .sort((a, b) => b.total - a.total)
 
-  // Recebidos, agrupados pelo dia em que o cliente pagou
   const porDiaPago = new Map<string, FiadoT[]>()
-  for (const f of recebidos) porDiaPago.set(f.recebimento!.data, [...(porDiaPago.get(f.recebimento!.data) ?? []), f])
+  for (const f of recebidos) porDiaPago.set(f.pagoEm!, [...(porDiaPago.get(f.pagoEm!) ?? []), f])
 
   async function executar(acao: () => Promise<unknown>) {
     setOcupado(true)
@@ -65,27 +55,19 @@ export default function Fiado() {
     } finally {
       setOcupado(false)
       setReceber(null)
-      setDesfazer(null)
       setTrocar(null)
+      setDesfazer(null)
     }
   }
-
-  const abrirRecebimento = (r: Recebimento) => {
+  const abrirReceber = (titulo: string, fiados: FiadoT[]) => {
     setForma('pix')
-    setReceber(r)
+    setReceber({ titulo, fiados })
   }
-  const valorReceber = receber?.vendas.reduce((s, f) => s + f.valor, 0) ?? 0
+  const valorReceber = receber?.fiados.reduce((s, f) => s + f.valor, 0) ?? 0
 
   return (
-    <Pagina largura="max-w-3xl">
-      <div className="md:hidden">
-        <Topo titulo="Fiado" />
-      </div>
-      <div className="hidden pb-5 pt-6 md:block">
-        <h1 className="mb-4 text-3xl font-extrabold">Fiado</h1>
-        <Abas />
-      </div>
-
+    <Pagina largura="max-w-3xl" comNav>
+      <TituloSecao titulo="Fiado" sub="Vendas para pagar depois" />
       {(erro || erroCarga) && (
         <div className="mb-3">
           <Aviso>{erro ?? erroCarga}</Aviso>
@@ -96,19 +78,16 @@ export default function Fiado() {
         <Carregando />
       ) : (
         <div className="num space-y-4">
-          {/* total */}
           <section className={`cartao flex flex-wrap items-end justify-between gap-3 p-5 ${totalAberto ? 'border-alerta/40' : ''}`}>
             <div>
               <p className={`rotulo ${totalAberto ? 'text-alerta' : ''}`}>Total a receber</p>
               <p className={`mt-1 text-4xl font-extrabold ${totalAberto ? 'text-alerta' : ''}`}>{reais(totalAberto)}</p>
             </div>
             <p className="text-sm text-sec">
-              {clientes.length} {clientes.length === 1 ? 'cliente' : 'clientes'} · {abertos.length}{' '}
-              {abertos.length === 1 ? 'venda' : 'vendas'}
+              {devedores.length} {devedores.length === 1 ? 'cliente' : 'clientes'} · {abertos.length} {abertos.length === 1 ? 'venda' : 'vendas'}
             </p>
           </section>
 
-          {/* abas */}
           <div className="grid grid-cols-2 gap-1 rounded-2xl border border-borda bg-cartao p-1" role="tablist">
             {(
               [
@@ -116,65 +95,49 @@ export default function Fiado() {
                 ['recebidos', 'Recebidos'],
               ] as const
             ).map(([v, t]) => (
-              <button
-                key={v}
-                type="button"
-                role="tab"
-                aria-selected={aba === v}
-                className={`btn min-h-11 ${aba === v ? 'bg-destaque text-fundo' : 'text-sec'}`}
-                onClick={() => setAba(v)}
-              >
+              <button key={v} type="button" role="tab" aria-selected={aba === v} className={`btn min-h-11 ${aba === v ? 'bg-destaque text-fundo' : 'text-sec'}`} onClick={() => setAba(v)}>
                 {t}
               </button>
             ))}
           </div>
 
           {aba === 'abertos' ? (
-            clientes.length === 0 ? (
-              <p className="py-8 text-center text-sec">Ninguém devendo. 🎉</p>
+            devedores.length === 0 ? (
+              <Vazio>Ninguém devendo. 🎉</Vazio>
             ) : (
-              clientes.map((c) => (
-                <section key={c.nome} className="cartao overflow-hidden">
+              devedores.map((g) => (
+                <section key={g.clienteId} className="cartao overflow-hidden">
                   <div className="flex items-center justify-between gap-3 border-b border-borda px-4 py-3">
-                    <div className="min-w-0">
-                      <h2 className="truncate text-lg font-bold">{c.nome}</h2>
+                    <Link to={`/clientes/${g.clienteId}`} className="min-w-0 hover:underline">
+                      <h2 className="truncate text-lg font-bold">{g.nome}</h2>
                       <p className="text-sm text-sec">
-                        {c.vendas.length} {c.vendas.length === 1 ? 'compra' : 'compras'} · desde {dataCurta(c.vendas[0].data)}
+                        {g.fiados.length} {g.fiados.length === 1 ? 'compra' : 'compras'} · desde {dataCurta(g.fiados[0].data)}
                       </p>
-                    </div>
+                    </Link>
                     <div className="flex shrink-0 items-center gap-3">
-                      <span className="text-xl font-extrabold text-alerta">{reais(c.total)}</span>
-                      {c.vendas.length > 1 && (
-                        <button
-                          type="button"
-                          className="btn-primario px-4"
-                          onClick={() => abrirRecebimento({ titulo: `${c.nome} pagou tudo`, vendas: c.vendas })}
-                          disabled={!online || ocupado}
-                        >
+                      <span className="text-xl font-extrabold text-alerta">{reais(g.total)}</span>
+                      {g.fiados.length > 1 && (
+                        <button type="button" className="btn-primario px-4" onClick={() => abrirReceber(`${g.nome} pagou tudo`, g.fiados)} disabled={!online || ocupado}>
                           Receber tudo
                         </button>
                       )}
                     </div>
                   </div>
                   <ul className="divide-y divide-borda/60">
-                    {c.vendas.map((f) => (
-                      <li key={f.venda_id} className="flex items-center justify-between gap-3 px-4 py-2.5">
-                        <div className="min-w-0">
-                          <p className="truncate">
-                            {f.quantidade}× {f.produto}
-                          </p>
+                    {g.fiados.map((f) => (
+                      <li key={f.pedidoId} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                        <Link to={`/dia/${f.diaId}`} className="min-w-0 hover:underline">
+                          <p className="truncate">{f.itens}</p>
                           <p className="text-sm text-sec">
                             {diaDaSemana(f.data).split('-')[0]}, {dataCurta(f.data)}
                           </p>
-                        </div>
+                        </Link>
                         <div className="flex shrink-0 items-center gap-3">
                           <span className="font-bold">{reais(f.valor)}</span>
                           <button
                             type="button"
-                            className={`${c.vendas.length > 1 ? 'btn-secundario' : 'btn-primario'} px-4`}
-                            onClick={() =>
-                              abrirRecebimento({ titulo: `${c.nome} pagou ${f.quantidade}× ${f.produto}`, vendas: [f] })
-                            }
+                            className={`${g.fiados.length > 1 ? 'btn-secundario' : 'btn-primario'} px-4`}
+                            onClick={() => abrirReceber(`${g.nome} pagou ${f.itens}`, [f])}
                             disabled={!online || ocupado}
                           >
                             Recebeu
@@ -187,7 +150,7 @@ export default function Fiado() {
               ))
             )
           ) : porDiaPago.size === 0 ? (
-            <p className="py-8 text-center text-sec">Nenhum fiado recebido ainda.</p>
+            <Vazio>Nenhum fiado recebido ainda.</Vazio>
           ) : (
             [...porDiaPago.entries()].map(([data, lista]) => (
               <section key={data} className="space-y-2">
@@ -196,25 +159,23 @@ export default function Fiado() {
                 </h2>
                 <ul className="cartao divide-y divide-borda/60">
                   {lista.map((f) => (
-                    <li key={f.venda_id} className="flex items-center justify-between gap-3 px-4 py-3">
+                    <li key={f.pedidoId} className="flex items-center justify-between gap-2 px-4 py-3">
                       <div className="min-w-0">
                         <p className="truncate font-semibold">{f.cliente}</p>
-                        <p className="text-sm text-sec">
-                          {f.quantidade}× {f.produto} · vendido em {dataCurta(f.data)}
+                        <p className="truncate text-sm text-sec">
+                          {f.itens} · vendido em {dataCurta(f.data)}
                         </p>
                       </div>
-                      <div className="flex shrink-0 items-center gap-2">
+                      <div className="flex shrink-0 items-center gap-1">
                         <div className="text-right">
                           <p className="font-bold">{reais(f.valor)}</p>
-                          <span className="inline-block rounded-full bg-positivo/15 px-2 py-0.5 text-xs font-semibold text-positivo">
-                            {rotulo[f.recebimento!.pagamento]}
-                          </span>
+                          <Selo cor="positivo">{ROTULO_PAGAMENTO[f.pagoCom!]}</Selo>
                         </div>
                         <button
                           type="button"
                           className="grid size-11 place-items-center rounded-xl text-sec hover:bg-destaque/10 hover:text-claro"
                           onClick={() => {
-                            setForma(f.recebimento!.pagamento)
+                            setForma(f.pagoCom!)
                             setTrocar(f)
                           }}
                           disabled={!online || ocupado}
@@ -248,22 +209,23 @@ export default function Fiado() {
         titulo={`${receber?.titulo ?? ''} · ${reais(valorReceber)}`}
         confirmar="Confirmar recebimento"
         ocupado={ocupado}
-        onConfirmar={() => receber && executar(async () => { for (const f of receber.vendas) await receberFiado(f, forma) })}
+        onConfirmar={() => receber && executar(() => receberFiados(receber.fiados.map((f) => f.pedidoId), forma))}
         onCancelar={() => setReceber(null)}
       >
         {receber && (
           <div className="space-y-3">
-            {receber.vendas.length > 1 && (
+            {receber.fiados.length > 1 && (
               <ul className="space-y-0.5">
-                {receber.vendas.map((f) => (
-                  <li key={f.venda_id}>
-                    {dataCurta(f.data)} · {f.quantidade}× {f.produto} · {reais(f.valor)}
+                {receber.fiados.map((f) => (
+                  <li key={f.pedidoId}>
+                    {dataCurta(f.data)} · {f.itens} · {reais(f.valor)}
                   </li>
                 ))}
               </ul>
             )}
             <p>O pagamento aparece no resumo do dia de cada venda.</p>
-            <FormaEscolha forma={forma} setForma={setForma} nome="forma" />
+            <p className="rotulo">Pagou com</p>
+            <Escolha nome="forma" opcoes={FORMAS_RECEBIMENTO} valor={forma} onChange={setForma} />
           </div>
         )}
       </Confirmar>
@@ -273,10 +235,10 @@ export default function Fiado() {
         titulo={`Como ${trocar?.cliente} pagou?`}
         confirmar="Salvar"
         ocupado={ocupado}
-        onConfirmar={() => trocar?.recebimento && executar(() => alterarRecebimento(trocar.recebimento!.id, forma))}
+        onConfirmar={() => trocar && executar(() => trocarFormaRecebimento(trocar.pedidoId, forma))}
         onCancelar={() => setTrocar(null)}
       >
-        <FormaEscolha forma={forma} setForma={setForma} nome="forma-troca" />
+        <Escolha nome="forma-troca" opcoes={FORMAS_RECEBIMENTO} valor={forma} onChange={setForma} />
       </Confirmar>
 
       <Confirmar
@@ -285,32 +247,11 @@ export default function Fiado() {
         confirmar="Desfazer"
         perigo
         ocupado={ocupado}
-        onConfirmar={() => desfazer?.recebimento && executar(() => desfazerRecebimento(desfazer.recebimento!.id))}
+        onConfirmar={() => desfazer && executar(() => desfazerRecebimento(desfazer.pedidoId))}
         onCancelar={() => setDesfazer(null)}
       >
         A venda de {desfazer?.cliente} volta para "a receber".
       </Confirmar>
     </Pagina>
-  )
-}
-
-function FormaEscolha({ forma, setForma, nome }: { forma: FormaRecebimento; setForma: (f: FormaRecebimento) => void; nome: string }) {
-  return (
-    <fieldset>
-      <legend className="rotulo mb-2">Pagou com</legend>
-      <div className="grid grid-cols-3 gap-2">
-        {FORMAS_RECEBIMENTO.map((p) => (
-          <label
-            key={p.valor}
-            className={`btn min-h-11 cursor-pointer border text-sm ${
-              forma === p.valor ? 'border-destaque bg-destaque text-fundo' : 'border-borda text-texto'
-            }`}
-          >
-            <input type="radio" name={nome} className="sr-only" checked={forma === p.valor} onChange={() => setForma(p.valor)} />
-            {p.rotulo}
-          </label>
-        ))}
-      </div>
-    </fieldset>
   )
 }

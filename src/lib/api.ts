@@ -1,343 +1,182 @@
+// Acesso ao Supabase. Tudo que sai daqui já está em centavos e com os nomes do app (lib/tipos.ts).
 import { supabase } from './supabase'
 import { deBanco, paraBanco } from './dinheiro'
 import { hojeBelem } from './datas'
-import {
-  calcularResumo,
-  criarSnapshot,
-  listarVendasDoDia,
-  type FormaRecebimento,
-  type Pagamento,
-  type SituacaoFiado,
-  type Snapshot,
-  type StatusVenda,
-} from './resumo'
+import type { Cliente, Dia, DiaCompleto, FormaRecebimento, ItemDia, Pagamento, Pedido, Produto, StatusPedido } from './tipos'
 
-export interface Dia {
-  id: string
-  data: string
-  status: 'aberto' | 'fechado'
-  fechado_em: string | null
-  snapshot: Snapshot | null
-}
-
-export interface ItemDia {
-  id: string
-  produto_id: string
-  nome: string
-  produzido: number
-  preco: number // centavos
-}
-
-export interface Venda {
-  id: string
-  item_dia_id: string
-  quantidade: number
-  valor_cobrado: number // centavos
-  pagamento: Pagamento | null // null só em reserva
-  status: StatusVenda
-  cliente: string | null
-  criado_em: string
-}
-
-export interface DiaCompleto {
-  dia: Dia
-  itens: ItemDia[]
-  vendas: Venda[]
-}
-
-export interface ProdutoAbrir {
-  produto_id: string
-  nome: string
-  produzido: number
-  preco: number
-}
+// ---------------------------------------------------------------- erros
 
 /** Mensagem legível para erros do Supabase/Postgres. */
 export function mensagemErro(e: unknown): string {
-  const err = e as { message?: string; code?: string }
-  if (!navigator.onLine) return 'Sem conexão com a internet. Nada foi salvo.'
-  if (err?.code === '23505')
-    return err.message?.includes('produtos') ? 'Já existe um produto com esse nome.' : 'Já existe um registro para esse dia.'
-  if (err?.message?.includes('cliente_obrigatorio_no_pix')) return 'No Pix e no fiado, o nome do cliente é obrigatório.'
-  if (err?.message?.includes('vendas_pagamento_check'))
-    return 'O banco ainda não aceita fiado. Rode o arquivo 0002_fiado.sql no SQL Editor do Supabase.'
-  if (err?.code === '42P01' || err?.code === 'PGRST205')
-    return 'O banco ainda não tem a parte de fiado. Rode o arquivo 0002_fiado.sql no SQL Editor do Supabase.'
-  if (err?.message?.includes('column') && err.message.includes('status'))
-    return 'O banco ainda não tem a parte de reservas. Rode o arquivo 0003_reservas.sql no SQL Editor do Supabase.'
-  if (err?.message?.includes('pagamento_obrigatorio_na_venda')) return 'Escolha a forma de pagamento.'
-  if (err?.message?.includes('cliente_obrigatorio_na_reserva')) return 'Na reserva, o nome do cliente é obrigatório.'
-  if (err?.code === '23503' && err.message?.includes('fiado'))
-    return 'Essa venda fiado já foi recebida. Desfaça o recebimento na tela Fiado antes.'
-  if (err?.message?.includes('Failed to fetch')) return 'Não foi possível falar com o servidor. Nada foi salvo.'
-  return err?.message ?? 'Erro inesperado.'
+  const err = e as { message?: string; code?: string; details?: string }
+  const msg = err?.message ?? ''
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return 'Sem conexão com a internet. Nada foi salvo.'
+  if (msg.includes('Failed to fetch')) return 'Não foi possível falar com o servidor. Nada foi salvo.'
+  if (err?.code === '42P01' || err?.code === 'PGRST205' || err?.code === 'PGRST202' || (err?.code === '42703' && msg.includes('pedidos')))
+    return 'O banco ainda não foi atualizado. Rode o arquivo 0004_reestruturacao.sql no SQL Editor do Supabase.'
+  if (err?.code === '23505') {
+    if (msg.includes('produtos')) return 'Já existe um produto com esse nome.'
+    if (msg.includes('clientes')) return 'Já existe um cliente com esse nome.'
+    if (msg.includes('dias')) return 'Já existe um dia com essa data. Abra-o pelo Histórico.'
+    return 'Registro repetido.'
+  }
+  if (msg.includes('cliente_no_pix_fiado_reserva')) return 'Informe o nome do cliente (obrigatório no Pix, no fiado e na reserva).'
+  if (msg.includes('pagamento_na_venda')) return 'Escolha a forma de pagamento.'
+  if (err?.code === 'P0001') return msg // mensagens das regras do banco já vêm em português
+  return msg || 'Erro inesperado.'
 }
 
 type Resposta = { data: unknown; error: unknown }
-
 function ok<R extends Resposta>(r: R): NonNullable<R['data']> {
   if (r.error) throw r.error
   if (r.data === null) throw new Error('Resposta vazia do servidor.')
   return r.data as NonNullable<R['data']>
 }
-
-/** Para consultas .maybeSingle(): null quando não há linha. */
 function okTalvez<R extends Resposta>(r: R): R['data'] {
   if (r.error) throw r.error
   return r.data
 }
 
-type Linha = Record<string, unknown>
+type Linha = Record<string, any> // eslint-disable-line @typescript-eslint/no-explicit-any
+
+// ---------------------------------------------------------------- conversões
 
 const paraDia = (d: Linha): Dia => ({
-  id: d.id as string,
-  data: d.data as string,
-  status: d.status as Dia['status'],
-  fechado_em: (d.fechado_em as string) ?? null,
-  snapshot: (d.snapshot as Snapshot) ?? null,
+  id: d.id,
+  data: d.data,
+  status: d.status,
+  gasto: d.gasto === null || d.gasto === undefined ? null : deBanco(d.gasto),
+  semGasto: Boolean(d.sem_gasto),
+  fechadoEm: d.fechado_em ?? null,
 })
 
 const paraItem = (i: Linha): ItemDia => ({
-  id: i.id as string,
-  produto_id: i.produto_id as string,
-  nome: i.nome as string,
-  produzido: i.produzido as number,
-  preco: deBanco(i.preco as string),
+  id: i.id,
+  produtoId: i.produto_id,
+  nome: i.nome,
+  unidade: i.produtos?.unidade ?? 'un',
+  produzido: i.produzido ?? null,
+  preco: deBanco(i.preco),
 })
 
-const paraVenda = (v: Linha): Venda => ({
-  id: v.id as string,
-  item_dia_id: v.item_dia_id as string,
-  quantidade: v.quantidade as number,
-  valor_cobrado: deBanco(v.valor_cobrado as string),
-  pagamento: (v.pagamento as Pagamento) ?? null,
-  status: (v.status as StatusVenda) ?? 'concluida', // banco sem a migração 0003 não tem a coluna
-  cliente: (v.cliente as string) ?? null,
-  criado_em: v.criado_em as string,
+const paraPedido = (p: Linha): Pedido => ({
+  id: p.id,
+  diaId: p.dia_id,
+  clienteId: p.cliente_id ?? null,
+  cliente: p.clientes?.nome ?? null,
+  status: p.status,
+  pagamento: p.pagamento ?? null,
+  desconto: deBanco(p.desconto),
+  total: deBanco(p.total),
+  observacao: p.observacao ?? null,
+  fiadoPagoEm: p.fiado_pago_em ?? null,
+  fiadoPagoCom: p.fiado_pago_com ?? null,
+  criadoEm: p.criado_em,
+  itens: (p.pedido_itens ?? []).map((i: Linha) => ({
+    id: i.id,
+    itemDiaId: i.item_dia_id,
+    quantidade: i.quantidade,
+    precoUnit: deBanco(i.preco_unit),
+    subtotal: deBanco(i.subtotal),
+  })),
 })
 
-async function completar(dia: Dia): Promise<DiaCompleto> {
-  const itens = ok(
-    await supabase.from('itens_dia').select('id, produto_id, nome, produzido, preco').eq('dia_id', dia.id).order('nome'),
-  ).map(paraItem)
-  const ids = itens.map((i) => i.id)
-  const vendas = ids.length
-    ? ok(
-        await supabase
-          .from('vendas')
-          .select('*') // inclui "status" quando o banco já tem a migração 0003
-          .in('item_dia_id', ids)
-          .order('criado_em', { ascending: false }),
-      ).map(paraVenda)
-    : []
-  return { dia, itens, vendas }
+const paraProduto = (p: Linha): Produto => ({
+  id: p.id,
+  nome: p.nome,
+  preco: deBanco(p.preco_padrao),
+  unidade: p.unidade ?? 'un',
+  categoria: p.categoria ?? null,
+  ativo: p.ativo,
+})
+
+// ---------------------------------------------------------------- dias
+
+const SELECT_DIA = `id, data, status, gasto, sem_gasto, fechado_em,
+  itens_dia(id, produto_id, nome, produzido, preco, produtos(unidade)),
+  pedidos(*, clientes(nome), pedido_itens(id, item_dia_id, quantidade, preco_unit, subtotal))`
+
+function paraDiaCompleto(d: Linha): DiaCompleto {
+  return {
+    dia: paraDia(d),
+    itens: (d.itens_dia ?? []).map(paraItem).sort((a: ItemDia, b: ItemDia) => a.nome.localeCompare(b.nome, 'pt-BR')),
+    pedidos: (d.pedidos ?? []).map(paraPedido).sort((a: Pedido, b: Pedido) => b.criadoEm.localeCompare(a.criadoEm)),
+  }
 }
 
-const COLUNAS_DIA = 'id, data, status, fechado_em, snapshot'
+export async function carregarDia(id: string): Promise<DiaCompleto | null> {
+  const d = okTalvez(await supabase.from('dias').select(SELECT_DIA).eq('id', id).maybeSingle())
+  return d ? paraDiaCompleto(d) : null
+}
 
 export async function carregarDiaPorData(data: string): Promise<DiaCompleto | null> {
-  const d = okTalvez(await supabase.from('dias').select(COLUNAS_DIA).eq('data', data).maybeSingle())
-  return d ? completar(paraDia(d)) : null
+  const d = okTalvez(await supabase.from('dias').select(SELECT_DIA).eq('data', data).maybeSingle())
+  return d ? paraDiaCompleto(d) : null
 }
 
-export async function carregarDiaPorId(id: string): Promise<DiaCompleto | null> {
-  const d = okTalvez(await supabase.from('dias').select(COLUNAS_DIA).eq('id', id).maybeSingle())
-  return d ? completar(paraDia(d)) : null
+export const carregarHoje = () => carregarDiaPorData(hojeBelem())
+
+/** Dias de antes de hoje que ficaram abertos (esqueceram de fechar). */
+export async function diasAbertosAnteriores(): Promise<Dia[]> {
+  const d = ok(await supabase.from('dias').select('id, data, status, gasto, sem_gasto, fechado_em').eq('status', 'aberto').lt('data', hojeBelem()).order('data'))
+  return d.map(paraDia)
 }
 
-/** Tela onde o dia é trabalhado: hoje fica em "/", um dia anterior reaberto em "/dia/:id". */
-export function telaDoDia(dia: { id: string; data: string }) {
-  return dia.data === hojeBelem() ? '/' : `/dia/${dia.id}`
+/** Dias completos (fechados) de um período, para o relatório. */
+export async function diasDoPeriodo(inicio: string, fim: string) {
+  const d = ok(await supabase.from('dias').select(SELECT_DIA).gte('data', inicio).lte('data', fim).order('data'))
+  const todos = d.map(paraDiaCompleto)
+  return { fechados: todos.filter((x) => x.dia.status === 'fechado'), abertos: todos.filter((x) => x.dia.status === 'aberto').map((x) => x.dia) }
 }
 
-/** Dia (com itens e vendas) ao qual um produto do dia pertence. */
-export async function carregarDiaDoItem(itemId: string): Promise<DiaCompleto | null> {
-  const i = okTalvez(await supabase.from('itens_dia').select('dia_id').eq('id', itemId).maybeSingle())
-  return i ? carregarDiaPorId(i.dia_id as string) : null
+export interface DiaHistorico {
+  dia: Dia
+  vendas: number
+  faturamento: number
+  aReceber: number
+  lucro: number | null // só para dia fechado
 }
 
-export async function carregarHoje() {
-  return carregarDiaPorData(hojeBelem())
-}
-
-/** Dia de antes de hoje que ficou aberto (esqueceram de finalizar). */
-export async function diaAnteriorAberto(): Promise<Dia | null> {
-  const d = ok(
-    await supabase.from('dias').select(COLUNAS_DIA).eq('status', 'aberto').lt('data', hojeBelem()).order('data', { ascending: false }).limit(1),
+export async function listarHistorico(limite = 180): Promise<DiaHistorico[]> {
+  const dias = ok(
+    await supabase
+      .from('dias')
+      .select('id, data, status, gasto, sem_gasto, fechado_em, pedidos(total, status, pagamento, fiado_pago_em)')
+      .order('data', { ascending: false })
+      .limit(limite),
   )
-  return d.length ? paraDia(d[0]) : null
-}
-
-/** Produtos ativos com os valores do último dia em que foram usados. */
-export async function produtosParaAbrir(): Promise<ProdutoAbrir[]> {
-  const produtos = ok(await supabase.from('produtos').select('id, nome, preco_padrao').eq('ativo', true).order('criado_em'))
-  const ultimos = ok(await supabase.from('ultimos_valores').select('produto_id, produzido, preco'))
-  const mapa = new Map(ultimos.map((u) => [u.produto_id as string, u]))
-  return produtos.map((p) => {
-    const u = mapa.get(p.id)
+  return dias.map((d) => {
+    const dia = paraDia(d)
+    const concluidos = (d.pedidos as Linha[]).filter((p) => p.status === 'concluido')
+    const faturamento = concluidos.reduce((s, p) => s + deBanco(p.total), 0)
+    const aReceber = concluidos.filter((p) => p.pagamento === 'fiado' && !p.fiado_pago_em).reduce((s, p) => s + deBanco(p.total), 0)
     return {
-      produto_id: p.id,
-      nome: p.nome,
-      produzido: (u?.produzido as number) ?? 0,
-      preco: deBanco(u ? (u.preco as string) : p.preco_padrao),
+      dia,
+      vendas: concluidos.length,
+      faturamento,
+      aReceber,
+      lucro: dia.status === 'fechado' ? faturamento - (dia.gasto ?? 0) : null,
     }
   })
 }
 
-/** Cria o produto; se já existiu e foi removido, reativa com o novo preço. */
-export async function criarProduto(nome: string, preco: number): Promise<string> {
-  const p = ok(
-    await supabase
-      .from('produtos')
-      .upsert({ nome: nome.trim(), preco_padrao: paraBanco(preco), ativo: true }, { onConflict: 'nome' })
-      .select('id')
-      .single(),
-  )
-  return p.id
+/** Abre um dia (hoje ou anterior) com os produtos escolhidos. */
+export async function abrirDia(data: string, itens: { produtoId: string; produzido: number | null; preco: number }[]): Promise<string> {
+  const payload = itens.map((i) => ({ produto_id: i.produtoId, produzido: i.produzido ?? '', preco: paraBanco(i.preco) }))
+  return ok(await supabase.rpc('abrir_dia_em', { p_data: data, p_itens: payload })) as string
 }
 
-/** Tira o produto da lista de "Abrir o dia" (o histórico continua intacto). */
-export async function removerProduto(id: string) {
-  const r = ok(await supabase.from('produtos').update({ ativo: false }).eq('id', id).select('id'))
-  if (!r.length) throw new Error('Produto não encontrado.')
-}
-
-export async function abrirDia(itens: ProdutoAbrir[]): Promise<string> {
-  // O custo por unidade não é mais usado; o gasto do dia é informado ao finalizar
-  const payload = itens.map((i) => ({
-    produto_id: i.produto_id,
-    produzido: i.produzido,
-    preco: paraBanco(i.preco),
-    custo: '0.00',
-  }))
-  return ok(await supabase.rpc('abrir_dia', { p_itens: payload })) as string
-}
-
-/**
- * Venda lançada num dia anterior: a hora real não existe, então grava ao meio-dia de Belém
- * daquela data (fica dentro do dia certo no histórico e na imagem).
- */
-export function horaParaDia(data: string): string | undefined {
-  return data < hojeBelem() ? `${data}T15:00:00Z` : undefined
-}
-
-export async function registrarVenda(v: {
-  item_dia_id: string
-  quantidade: number
-  valor_cobrado: number
-  pagamento: Pagamento
-  cliente: string
-  criado_em?: string
-}) {
-  const cliente = v.cliente.trim()
-  ok(
-    await supabase
-      .from('vendas')
-      .insert({
-        item_dia_id: v.item_dia_id,
-        quantidade: v.quantidade,
-        valor_cobrado: paraBanco(v.valor_cobrado),
-        pagamento: v.pagamento,
-        cliente: cliente || null,
-        ...(v.criado_em ? { criado_em: v.criado_em } : {}),
-      })
-      .select('id'),
-  )
-}
-
-/** Separa unidades para o cliente buscar depois (ainda não é venda). */
-export async function registrarReserva(v: {
-  item_dia_id: string
-  quantidade: number
-  valor_cobrado: number
-  cliente: string
-  criado_em?: string
-}) {
-  ok(
-    await supabase
-      .from('vendas')
-      .insert({
-        item_dia_id: v.item_dia_id,
-        quantidade: v.quantidade,
-        valor_cobrado: paraBanco(v.valor_cobrado),
-        pagamento: null,
-        status: 'reservada',
-        cliente: v.cliente.trim(),
-        ...(v.criado_em ? { criado_em: v.criado_em } : {}),
-      })
-      .select('id'),
-  )
-}
-
-export async function carregarVenda(id: string): Promise<Venda | null> {
-  const v = okTalvez(await supabase.from('vendas').select('*').eq('id', id).maybeSingle())
-  return v ? paraVenda(v) : null
-}
-
-/**
- * Corrige uma venda (ou entrega uma reserva, passando status 'concluida').
- * Fiado já recebido não pode trocar de forma de pagamento: desfaça o recebimento antes.
- */
-export async function atualizarVenda(
-  id: string,
-  v: { quantidade: number; valor_cobrado: number; pagamento: Pagamento; cliente: string; status?: StatusVenda },
-) {
-  const atual = await carregarVenda(id)
-  if (!atual) throw new Error('Venda não encontrada.')
-  if (atual.pagamento === 'fiado' && v.pagamento !== 'fiado') {
-    const rec = await supabase.from('fiado_pagamentos').select('id').eq('venda_id', id).limit(1)
-    if (rec.data?.length) throw new Error('Esse fiado já foi recebido. Desfaça o recebimento na tela Fiado antes de trocar a forma de pagamento.')
-  }
-  const cliente = v.cliente.trim()
-  const dados: Record<string, unknown> = {
-    quantidade: v.quantidade,
-    valor_cobrado: paraBanco(v.valor_cobrado),
-    pagamento: v.pagamento,
-    cliente: cliente || null,
-  }
-  if (v.status) dados.status = v.status
-  const r = ok(await supabase.from('vendas').update(dados).eq('id', id).select('id'))
-  if (!r.length) throw new Error('Não foi possível salvar a venda.')
-}
-
-export async function desfazerVenda(id: string) {
-  const apagadas = ok(await supabase.from('vendas').delete().eq('id', id).select('id'))
-  if (!apagadas.length) throw new Error('A venda não foi encontrada (talvez já tenha sido desfeita).')
-}
-
-/** Nomes de clientes já usados, mais recentes primeiro. */
-export async function clientesRecentes(limite = 8): Promise<string[]> {
-  const linhas = ok(
-    await supabase.from('vendas').select('cliente, criado_em').not('cliente', 'is', null).order('criado_em', { ascending: false }).limit(300),
-  )
-  const vistos = new Map<string, string>()
-  for (const l of linhas) {
-    const nome = (l.cliente as string).trim()
-    const chave = nome.toLocaleLowerCase('pt-BR')
-    if (nome && !vistos.has(chave)) vistos.set(chave, nome)
-    if (vistos.size >= limite) break
-  }
-  return [...vistos.values()]
-}
-
-/**
- * Recarrega o dia do banco, calcula o resumo e grava o snapshot fechando o dia.
- * `gasto`: gasto com material em centavos, ou null quando não teve gasto (N/A).
- */
-export async function finalizarDia(diaId: string, gasto: number | null): Promise<Snapshot> {
-  const atual = await carregarDiaPorId(diaId)
-  if (!atual) throw new Error('Dia não encontrado.')
-  if (atual.dia.status === 'fechado') throw new Error('Este dia já está fechado.')
-  const resumo = calcularResumo(atual.itens, atual.vendas)
-  if (resumo.totais.reservas) throw new Error('Ainda há reservas em aberto. Entregue ou cancele antes de finalizar.')
-  const lista = listarVendasDoDia(atual.itens, atual.vendas)
-  const snapshot = criarSnapshot(atual.dia.data, resumo, gasto, new Date().toISOString(), lista)
+/** Fecha o dia com o gasto com material (centavos) ou null = "não teve gasto". */
+export async function fecharDia(diaId: string, gasto: number | null) {
   const r = ok(
-    await supabase.from('dias').update({ status: 'fechado', snapshot }).eq('id', diaId).eq('status', 'aberto').select('fechado_em'),
+    await supabase
+      .from('dias')
+      .update({ status: 'fechado', gasto: gasto === null ? null : paraBanco(gasto), sem_gasto: gasto === null })
+      .eq('id', diaId)
+      .eq('status', 'aberto')
+      .select('id'),
   )
-  if (!r.length) throw new Error('Não foi possível fechar o dia (ele pode ter sido fechado por outra pessoa).')
-  snapshot.fechado_em = r[0].fechado_em as string
-  return snapshot
+  if (!r.length) throw new Error('Não foi possível fechar o dia (ele pode já ter sido fechado).')
 }
 
 export async function reabrirDia(diaId: string) {
@@ -345,232 +184,256 @@ export async function reabrirDia(diaId: string) {
   if (!r.length) throw new Error('Não foi possível reabrir o dia.')
 }
 
-export interface DiaHistorico {
-  id: string
-  data: string
-  status: Dia['status']
-  liquido: number | null
-  lucro: number | null
-  resumido: boolean
-}
-
-export async function listarHistorico(): Promise<DiaHistorico[]> {
-  const dias = ok(await supabase.from('dias').select('id, data, status, snapshot').order('data', { ascending: false }).limit(120))
-  return dias.map((d) => {
-    const s = d.snapshot as Snapshot | null
-    return {
-      id: d.id,
-      data: d.data,
-      status: d.status,
-      liquido: s ? Math.round(s.totais.liquido * 100) : null,
-      lucro: s ? Math.round(s.totais.lucro * 100) : null,
-      resumido: s?.tipo === 'resumo',
-    }
-  })
-}
-
-// ---------- Relatório do período ----------
-
-/** Dias do período: os fechados (com resumo) entram no relatório; os abertos só são avisados. */
-export async function diasDoPeriodo(inicio: string, fim: string) {
-  const dias = ok(
-    await supabase.from('dias').select('id, data, status, snapshot').gte('data', inicio).lte('data', fim).order('data'),
-  )
-  const fechados = dias.filter((d) => d.status === 'fechado' && d.snapshot).map((d) => d.snapshot as Snapshot)
-  const abertos = dias.filter((d) => d.status !== 'fechado').map((d) => ({ id: d.id as string, data: d.data as string }))
-  const fiados = fechados.flatMap((s) => (s.vendas_lista ?? []).filter((v) => v.pagamento === 'fiado').map((v) => v.venda_id))
-  return { fechados, abertos, situacao: await situacaoFiados(fiados) }
-}
-
-// ---------- Dias anteriores lançados por resumo ----------
-
-export async function diaJaExiste(data: string): Promise<boolean> {
-  const d = okTalvez(await supabase.from('dias').select('id').eq('data', data).maybeSingle())
-  return d !== null
-}
-
-/** Grava um dia anterior já fechado, só com o resumo (sem venda a venda). */
-export async function lancarDiaAnterior(snapshot: Snapshot): Promise<string> {
-  if (snapshot.data >= hojeBelem()) throw new Error('Escolha uma data anterior a hoje.')
-  const d = ok(
-    await supabase
-      .from('dias')
-      .insert({ data: snapshot.data, status: 'fechado', snapshot, fechado_em: new Date().toISOString() })
-      .select('id')
-      .single(),
-  )
-  return d.id
-}
-
-/** Troca o resumo de um dia lançado (o banco só aceita mudar dia fechado reabrindo antes). */
-export async function editarLancamento(diaId: string, snapshot: Snapshot) {
-  await reabrirDia(diaId)
-  const r = ok(await supabase.from('dias').update({ status: 'fechado', snapshot }).eq('id', diaId).select('id'))
-  if (!r.length) throw new Error('Não foi possível salvar o lançamento.')
-}
-
-/**
- * Transforma um dia lançado por resumo em dia venda a venda: reabre com os mesmos produtos e
- * quantidades (preço = recebido ÷ vendido, ou o do cadastro) para registrar cada venda com o cliente.
- * O resumo antigo é descartado; os novos totais vêm das vendas registradas.
- */
-export async function detalharLancamento(diaId: string) {
-  const atual = await carregarDiaPorId(diaId)
-  const s = atual?.dia.snapshot
-  if (!atual || s?.tipo !== 'resumo') throw new Error('Este dia não foi lançado por resumo.')
-  if (atual.itens.length) throw new Error('Este dia já tem produtos registrados.')
-
-  const produtos = await listarProdutos()
-  const itens: { produto: Produto; produzido: number; preco: number }[] = []
-  for (const i of s.itens) {
-    let produto = produtos.find((p) => p.nome.toLocaleLowerCase('pt-BR') === i.nome.toLocaleLowerCase('pt-BR'))
-    const precoMedio = i.vendido ? Math.round((i.faturado * 100) / i.vendido) : 0
-    if (!produto) {
-      // Produto que só existia no lançamento: cadastra como removido, para não aparecer ao abrir o dia
-      const p = ok(
-        await supabase.from('produtos').insert({ nome: i.nome, preco_padrao: paraBanco(precoMedio), ativo: false }).select('id').single(),
-      )
-      produto = { id: p.id, nome: i.nome, preco: precoMedio, ativo: false }
-    }
-    itens.push({ produto, produzido: i.produzido, preco: precoMedio || produto.preco })
-  }
-
-  await reabrirDia(diaId)
-  for (const i of itens) await adicionarItemDia(diaId, i.produto, i.produzido, i.preco)
-}
-
-/** Exclui um dia lançado por resumo. Dias com venda a venda não passam por aqui. */
-export async function excluirLancamento(diaId: string) {
-  return excluirDia(diaId)
-}
-
-/**
- * Apaga o dia inteiro: produtos do dia, vendas, reservas e recebimentos de fiado dessas vendas.
- * O banco só deixa mexer em dia aberto, então reabre antes. Não dá para desfazer.
- */
+/** Apaga o dia inteiro com produtos do dia, vendas, reservas e fiados. Não dá para desfazer. */
 export async function excluirDia(diaId: string) {
-  const atual = await carregarDiaPorId(diaId)
-  if (!atual) throw new Error('Dia não encontrado.')
-  if (atual.dia.status === 'fechado') await reabrirDia(diaId)
-  const vendaIds = atual.vendas.map((v) => v.id)
-  if (vendaIds.length) {
-    // Recebimentos de fiado prendem a venda (on delete restrict): saem primeiro
-    const r = await supabase.from('fiado_pagamentos').delete().in('venda_id', vendaIds)
-    if (r.error && r.error.code !== '42P01' && r.error.code !== 'PGRST205') throw r.error
-  }
-  const apagados = ok(await supabase.from('dias').delete().eq('id', diaId).select('id'))
-  if (!apagados.length) throw new Error('Não foi possível excluir o dia.')
+  const d = okTalvez(await supabase.from('dias').select('status').eq('id', diaId).maybeSingle())
+  if (!d) throw new Error('Dia não encontrado.')
+  if (d.status === 'fechado') await reabrirDia(diaId)
+  const r = ok(await supabase.from('dias').delete().eq('id', diaId).select('id'))
+  if (!r.length) throw new Error('Não foi possível excluir o dia.')
 }
 
-// ---------- Cadastro de produtos ----------
+// ---------------------------------------------------------------- produtos do dia
 
-export interface Produto {
-  id: string
-  nome: string
-  preco: number // centavos
-  ativo: boolean
+export async function salvarItemDia(id: string, produzido: number | null, preco: number) {
+  const r = ok(await supabase.from('itens_dia').update({ produzido, preco: paraBanco(preco) }).eq('id', id).select('id'))
+  if (!r.length) throw new Error('Produto do dia não encontrado.')
 }
+
+export async function adicionarItemDia(diaId: string, produto: Produto, produzido: number | null, preco: number) {
+  ok(
+    await supabase
+      .from('itens_dia')
+      .insert({ dia_id: diaId, produto_id: produto.id, nome: produto.nome, produzido, preco: paraBanco(preco), custo: 0 })
+      .select('id'),
+  )
+}
+
+/** Tira um produto do dia, só se ainda não teve venda nem reserva dele. */
+export async function removerItemDia(id: string) {
+  const usados = ok(await supabase.from('pedido_itens').select('id').eq('item_dia_id', id).limit(1))
+  if (usados.length) throw new Error('Esse produto já tem vendas neste dia. Desfaça as vendas antes de tirá-lo.')
+  ok(await supabase.from('itens_dia').delete().eq('id', id).select('id'))
+}
+
+// ---------------------------------------------------------------- vendas (pedidos)
+
+export interface PedidoParaSalvar {
+  id?: string
+  diaId: string
+  cliente: string
+  status: StatusPedido
+  pagamento: Pagamento | null
+  desconto: number
+  observacao?: string
+  criadoEm?: string
+  itens: { itemDiaId: string; quantidade: number; precoUnit: number }[]
+}
+
+/**
+ * Venda lançada num dia anterior: a hora real não existe; grava ao meio-dia de Belém daquela data,
+ * para ficar no dia certo.
+ */
+export const horaParaDia = (data: string) => (data < hojeBelem() ? `${data}T15:00:00Z` : undefined)
+
+export async function salvarPedido(p: PedidoParaSalvar): Promise<string> {
+  return ok(
+    await supabase.rpc('salvar_pedido', {
+      p: {
+        id: p.id ?? null,
+        dia_id: p.diaId,
+        cliente: p.cliente.trim(),
+        status: p.status,
+        pagamento: p.pagamento,
+        desconto: paraBanco(p.desconto),
+        observacao: p.observacao ?? '',
+        criado_em: p.criadoEm ?? '',
+        itens: p.itens.map((i) => ({ item_dia_id: i.itemDiaId, quantidade: i.quantidade, preco_unit: paraBanco(i.precoUnit) })),
+      },
+    }),
+  ) as string
+}
+
+export async function carregarPedido(id: string): Promise<Pedido | null> {
+  const p = okTalvez(await supabase.from('pedidos').select('*, clientes(nome), pedido_itens(id, item_dia_id, quantidade, preco_unit, subtotal)').eq('id', id).maybeSingle())
+  return p ? paraPedido(p) : null
+}
+
+export async function excluirPedido(id: string) {
+  const r = ok(await supabase.from('pedidos').delete().eq('id', id).select('id'))
+  if (!r.length) throw new Error('A venda não foi encontrada (talvez já tenha sido desfeita).')
+}
+
+// ---------------------------------------------------------------- fiado
+
+export interface Fiado {
+  pedidoId: string
+  diaId: string
+  data: string // dia da venda
+  clienteId: string
+  cliente: string
+  itens: string // "2× Empada de frango, 1× Pudim"
+  valor: number
+  pagoEm: string | null
+  pagoCom: FormaRecebimento | null
+}
+
+const descreverItens = (lista: Linha[]) => lista.map((i) => `${i.quantidade}× ${i.itens_dia?.nome ?? '—'}`).join(', ')
+
+export async function listarFiados(): Promise<Fiado[]> {
+  const ps = ok(
+    await supabase
+      .from('pedidos')
+      .select('id, dia_id, total, cliente_id, criado_em, fiado_pago_em, fiado_pago_com, clientes(nome), dias(data), pedido_itens(quantidade, itens_dia(nome))')
+      .eq('pagamento', 'fiado')
+      .eq('status', 'concluido')
+      .order('criado_em', { ascending: false })
+      .limit(1000),
+  ) as Linha[]
+  return ps.map((p) => ({
+    pedidoId: p.id,
+    diaId: p.dia_id,
+    data: p.dias?.data ?? p.criado_em.slice(0, 10),
+    clienteId: p.cliente_id,
+    cliente: p.clientes?.nome ?? '—',
+    itens: descreverItens(p.pedido_itens ?? []),
+    valor: deBanco(p.total),
+    pagoEm: p.fiado_pago_em ?? null,
+    pagoCom: p.fiado_pago_com ?? null,
+  }))
+}
+
+/** Registra o pagamento de um ou mais fiados (aparece no resumo do dia de cada venda). */
+export async function receberFiados(pedidoIds: string[], forma: FormaRecebimento, data = hojeBelem()) {
+  const r = ok(
+    await supabase.from('pedidos').update({ fiado_pago_em: data, fiado_pago_com: forma }).in('id', pedidoIds).eq('pagamento', 'fiado').select('id'),
+  )
+  if (r.length !== pedidoIds.length) throw new Error('Alguns fiados não foram encontrados. Atualize a tela.')
+}
+
+export async function desfazerRecebimento(pedidoId: string) {
+  ok(await supabase.from('pedidos').update({ fiado_pago_em: null, fiado_pago_com: null }).eq('id', pedidoId).select('id'))
+}
+
+export async function trocarFormaRecebimento(pedidoId: string, forma: FormaRecebimento) {
+  ok(await supabase.from('pedidos').update({ fiado_pago_com: forma }).eq('id', pedidoId).not('fiado_pago_em', 'is', null).select('id'))
+}
+
+// ---------------------------------------------------------------- produtos
 
 export async function listarProdutos(): Promise<Produto[]> {
-  const ps = ok(await supabase.from('produtos').select('id, nome, preco_padrao, ativo').order('ativo', { ascending: false }).order('nome'))
-  return ps.map((p) => ({ id: p.id, nome: p.nome, preco: deBanco(p.preco_padrao), ativo: p.ativo }))
+  const ps = ok(await supabase.from('produtos').select('id, nome, preco_padrao, unidade, categoria, ativo').order('nome'))
+  return ps.map(paraProduto).sort((a, b) => Number(b.ativo) - Number(a.ativo) || a.nome.localeCompare(b.nome, 'pt-BR'))
 }
 
-export async function salvarProduto(id: string, campos: { nome?: string; preco?: number; ativo?: boolean }) {
+/** Cria o produto; se já existiu (com o mesmo nome) e foi desativado, reativa com os dados novos. */
+export async function criarProduto(p: { nome: string; preco: number; unidade: string; categoria: string | null }): Promise<Produto> {
+  const r = ok(
+    await supabase
+      .from('produtos')
+      .upsert(
+        { nome: p.nome.trim(), preco_padrao: paraBanco(p.preco), unidade: p.unidade.trim() || 'un', categoria: p.categoria?.trim() || null, ativo: true },
+        { onConflict: 'nome' },
+      )
+      .select('id, nome, preco_padrao, unidade, categoria, ativo')
+      .single(),
+  )
+  return paraProduto(r)
+}
+
+export async function salvarProduto(id: string, campos: Partial<{ nome: string; preco: number; unidade: string; categoria: string | null; ativo: boolean }>) {
   const dados: Record<string, unknown> = {}
   if (campos.nome !== undefined) dados.nome = campos.nome.trim()
   if (campos.preco !== undefined) dados.preco_padrao = paraBanco(campos.preco)
+  if (campos.unidade !== undefined) dados.unidade = campos.unidade.trim() || 'un'
+  if (campos.categoria !== undefined) dados.categoria = campos.categoria?.trim() || null
   if (campos.ativo !== undefined) dados.ativo = campos.ativo
   const r = ok(await supabase.from('produtos').update(dados).eq('id', id).select('id'))
   if (!r.length) throw new Error('Produto não encontrado.')
 }
 
-// ---------- Fiado ----------
+// ---------------------------------------------------------------- clientes
 
-export interface Fiado {
-  venda_id: string
-  cliente: string
-  produto: string
-  quantidade: number
-  valor: number // centavos
-  data: string // dia da venda
-  criado_em: string
-  recebimento: { id: string; valor: number; pagamento: FormaRecebimento; data: string } | null
+export interface ResumoCliente extends Cliente {
+  compras: number
+  total: number
+  deve: number
+  ultimaCompra: string | null
 }
 
-/** Vendas fiado (as em aberto primeiro, depois as recebidas mais recentes). */
-export async function listarFiados(): Promise<Fiado[]> {
-  const linhas = ok(
+export async function listarClientes(): Promise<ResumoCliente[]> {
+  const cs = ok(
+    await supabase.from('clientes').select('id, nome, telefone, pedidos(total, status, pagamento, fiado_pago_em, criado_em)').order('nome'),
+  ) as Linha[]
+  return cs
+    .map((c) => {
+      const ps = (c.pedidos as Linha[]).filter((p) => p.status === 'concluido')
+      return {
+        id: c.id,
+        nome: c.nome,
+        telefone: c.telefone ?? null,
+        compras: ps.length,
+        total: ps.reduce((s, p) => s + deBanco(p.total), 0),
+        deve: ps.filter((p) => p.pagamento === 'fiado' && !p.fiado_pago_em).reduce((s, p) => s + deBanco(p.total), 0),
+        ultimaCompra: ps.map((p) => p.criado_em as string).sort().at(-1) ?? null,
+      }
+    })
+    .sort((a, b) => (b.ultimaCompra ?? '').localeCompare(a.ultimaCompra ?? '') || a.nome.localeCompare(b.nome, 'pt-BR'))
+}
+
+export interface CompraCliente {
+  pedidoId: string
+  diaId: string
+  data: string
+  itens: string
+  total: number
+  status: StatusPedido
+  pagamento: Pagamento | null
+  fiadoPagoEm: string | null
+  fiadoPagoCom: FormaRecebimento | null
+}
+
+export async function carregarCliente(id: string): Promise<{ cliente: Cliente; compras: CompraCliente[] } | null> {
+  const c = okTalvez(
     await supabase
-      .from('vendas')
-      .select('id, quantidade, valor_cobrado, cliente, criado_em, itens_dia(nome, dias(data)), fiado_pagamentos(id, valor, pagamento, data)')
-      .eq('pagamento', 'fiado')
-      .order('criado_em', { ascending: false })
-      .limit(500),
-  ) as unknown as Linha[]
-  return linhas.map((v) => {
-    const item = v.itens_dia as { nome: string; dias: { data: string } | null } | null
-    const pg = v.fiado_pagamentos as Linha | Linha[] | null
-    const rec = Array.isArray(pg) ? pg[0] : pg
-    return {
-      venda_id: v.id as string,
-      cliente: ((v.cliente as string) ?? '').trim(),
-      produto: item?.nome ?? '—',
-      quantidade: v.quantidade as number,
-      valor: deBanco(v.valor_cobrado as string),
-      data: item?.dias?.data ?? (v.criado_em as string).slice(0, 10),
-      criado_em: v.criado_em as string,
-      recebimento: rec
-        ? { id: rec.id as string, valor: deBanco(rec.valor as string), pagamento: rec.pagamento as FormaRecebimento, data: rec.data as string }
-        : null,
-    }
-  })
+      .from('clientes')
+      .select('id, nome, telefone, pedidos(id, dia_id, total, status, pagamento, fiado_pago_em, fiado_pago_com, criado_em, dias(data), pedido_itens(quantidade, itens_dia(nome)))')
+      .eq('id', id)
+      .maybeSingle(),
+  ) as Linha | null
+  if (!c) return null
+  const compras: CompraCliente[] = (c.pedidos as Linha[])
+    .map((p) => ({
+      pedidoId: p.id,
+      diaId: p.dia_id,
+      data: p.dias?.data ?? p.criado_em.slice(0, 10),
+      itens: descreverItens(p.pedido_itens ?? []),
+      total: deBanco(p.total),
+      status: p.status,
+      pagamento: p.pagamento ?? null,
+      fiadoPagoEm: p.fiado_pago_em ?? null,
+      fiadoPagoCom: p.fiado_pago_com ?? null,
+    }))
+    .sort((a, b) => b.data.localeCompare(a.data))
+  return { cliente: { id: c.id, nome: c.nome, telefone: c.telefone ?? null }, compras }
 }
 
-export async function receberFiado(f: Fiado, pagamento: FormaRecebimento) {
-  ok(await supabase.from('fiado_pagamentos').insert({ venda_id: f.venda_id, valor: paraBanco(f.valor), pagamento }).select('id'))
-}
-
-export async function desfazerRecebimento(id: string) {
-  const r = ok(await supabase.from('fiado_pagamentos').delete().eq('id', id).select('id'))
-  if (!r.length) throw new Error('Recebimento não encontrado.')
-}
-
-/** Troca a forma com que o fiado foi pago (se registrou errado). */
-export async function alterarRecebimento(id: string, pagamento: FormaRecebimento) {
-  const r = ok(await supabase.from('fiado_pagamentos').update({ pagamento }).eq('id', id).select('id'))
-  if (!r.length) throw new Error('Recebimento não encontrado.')
-}
-
-/** Situação atual dos fiados dessas vendas (para mostrar no resumo do dia da venda). */
-export async function situacaoFiados(vendaIds: string[]): Promise<SituacaoFiado> {
-  if (!vendaIds.length) return {}
-  const r = await supabase.from('fiado_pagamentos').select('venda_id, pagamento, data').in('venda_id', vendaIds)
-  if (r.error) return {}
-  return Object.fromEntries(
-    (r.data ?? []).map((p) => [p.venda_id as string, { pagamento: p.pagamento as FormaRecebimento, data: p.data as string }]),
+export async function salvarCliente(id: string, campos: { nome: string; telefone: string }) {
+  const r = ok(
+    await supabase.from('clientes').update({ nome: campos.nome.trim(), telefone: campos.telefone.trim() || null }).eq('id', id).select('id'),
   )
+  if (!r.length) throw new Error('Cliente não encontrado.')
 }
 
-// ---------- Produtos do dia aberto ----------
-
-export async function salvarItemDia(id: string, produzido: number, preco: number) {
-  const r = ok(await supabase.from('itens_dia').update({ produzido, preco: paraBanco(preco) }).eq('id', id).select('id'))
-  if (!r.length) throw new Error('Produto do dia não encontrado.')
-}
-
-export async function adicionarItemDia(diaId: string, produto: Produto, produzido: number, preco: number) {
-  ok(
-    await supabase
-      .from('itens_dia')
-      .insert({ dia_id: diaId, produto_id: produto.id, nome: produto.nome, produzido, preco: paraBanco(preco), custo: '0.00' })
-      .select('id'),
-  )
-}
-
-/** Tira um produto do dia, só se ele ainda não teve venda (apagar levaria as vendas junto). */
-export async function removerItemDia(id: string) {
-  const vendas = ok(await supabase.from('vendas').select('id').eq('item_dia_id', id).limit(1))
-  if (vendas.length) throw new Error('Esse produto já tem vendas hoje. Desfaça as vendas antes de tirá-lo do dia.')
-  ok(await supabase.from('itens_dia').delete().eq('id', id).select('id'))
+/** Nomes para sugerir na venda: quem comprou mais recentemente primeiro. */
+export async function nomesDeClientes(): Promise<string[]> {
+  const ps = ok(await supabase.from('pedidos').select('criado_em, clientes(nome)').not('cliente_id', 'is', null).order('criado_em', { ascending: false }).limit(400)) as Linha[]
+  const vistos = new Map<string, string>()
+  for (const p of ps) {
+    const nome = p.clientes?.nome as string | undefined
+    if (nome && !vistos.has(nome.toLocaleLowerCase('pt-BR'))) vistos.set(nome.toLocaleLowerCase('pt-BR'), nome)
+  }
+  const todos = ok(await supabase.from('clientes').select('nome').order('nome')) as Linha[]
+  for (const c of todos) if (!vistos.has(c.nome.toLocaleLowerCase('pt-BR'))) vistos.set(c.nome.toLocaleLowerCase('pt-BR'), c.nome)
+  return [...vistos.values()]
 }

@@ -1,45 +1,33 @@
 # Controle de Vendas
 
-App web instalável (PWA) para controlar a venda diária: quantidade do dia, vendas e estoque. No fim do dia, **Finalizar vendas** pede o gasto com material (ou "não teve gasto"), calcula o lucro, fecha o dia e gera uma imagem PNG de resumo.
+App web instalável (PWA) para vender produtos por dia: você abre o dia com os produtos (preço e, se quiser, quantidade), registra as vendas num carrinho, controla fiado e reservas, e no fim fecha o dia informando o gasto com material. Resumo, imagens para compartilhar, histórico, clientes e relatório são calculados na hora a partir das vendas.
 
 Site: <https://eng-kayky.github.io/Vendas_kayky/>
 
-Vite + React + TypeScript + Tailwind, Supabase (Postgres + Auth), publicado no GitHub Pages.
+## Como funciona
 
-## 1. Supabase
+- **Produtos**: cadastro com nome, preço, unidade (un, fatia, pote…) e categoria.
+- **Abrir o dia**: hoje ou qualquer data anterior. Para cada produto, preço e quantidade (vazio = sem controle de estoque).
+- **Vender**: carrinho com vários produtos, desconto (ou acréscimo), Pix / Dinheiro / Cartão / Fiado, cliente com sugestão de nomes, observação. Reservar separa os produtos até o cliente buscar.
+- **Fiado**: conta no faturamento do dia da venda; quando o cliente paga, o pagamento aparece no resumo daquele dia.
+- **Fechar o dia**: informa o gasto com material ou "não teve gasto"; o dia fica bloqueado (dá para reabrir).
+- **Clientes**: ficha com compras, quanto deve, receber tudo e lembrete pelo WhatsApp.
+- **Relatório**: semana e mês, com imagem.
 
-1. Crie um projeto em <https://supabase.com/dashboard> (região São Paulo, `sa-east-1`).
-2. **Migração:** em *SQL Editor*, cole e rode o conteúdo de `supabase/migrations/0001_init.sql`.
-3. **Desligar cadastro público:** *Authentication → Sign In / Providers* → desative **Allow new users to sign up**. Mantenha o provedor *Email* ligado.
-4. **Criar os 3 usuários:** *Authentication → Users → Add user → Create new user*, informe e-mail e senha e marque **Auto Confirm User**.
-5. **Chaves:** em *Project Settings → API* copie a **Project URL** e a chave **anon / publishable**.
-   **Nunca** use a chave `service_role` neste projeto (nem em arquivo, nem em commit, nem em variável).
+## Banco (Supabase)
 
-`supabase/seed.dev.sql` tem produtos de exemplo só para desenvolvimento. Não rode em produção.
+Rode no SQL Editor, na ordem, os arquivos de `supabase/migrations/`. Cada um roda uma vez só.
+A `0004_reestruturacao.sql` cria a estrutura atual (clientes, pedidos com itens) e copia os dados das versões antigas, mantendo as tabelas antigas como backup.
 
-## 2. Rodar localmente
+Usuários: *Authentication → Users → Add user* (marque *Auto Confirm User*) e deixe *Allow new users to sign up* desligado.
+
+## Desenvolvimento
 
 ```bash
-cp .env.example .env   # preencha URL e chave anon
 npm install
-npm run dev
-npm test
+npm run dev          # prévia com dados de exemplo em #/dev/imagem, #/dev/imagem?painel, ?fechado e ?venda
+npm test             # cálculos
+npm run test:banco   # migrações num Postgres local (PGlite)
 ```
 
-## 3. GitHub Pages
-
-1. Repositório: `eng-kayky/Vendas_kayky` (público). Se mudar o nome, troque `base` em `vite.config.ts`.
-2. *Settings → Secrets and variables → Actions → Variables*: crie `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`.
-3. *Settings → Pages → Build and deployment → Source*: **GitHub Actions**.
-4. Cada push na `main` roda os testes, faz o build e publica em `https://eng-kayky.github.io/Vendas_kayky/`.
-5. No Supabase, em *Authentication → URL Configuration*, coloque esse endereço como **Site URL**.
-
-## Regras principais
-
-- Cada dia é isolado; o estoque zera por dia. Restante = produzido − vendido (sempre calculado).
-- Lucro = faturamento líquido − custo de **tudo** que foi produzido.
-- Pix exige o nome do cliente (na tela e no banco).
-- Dia fechado fica bloqueado no banco (triggers). Reabrir pelo Histórico descarta o resumo gravado.
-- A data do dia segue o fuso de Belém (UTC−3).
-- Sem login, a chave anon não lê nem escreve nada (RLS + permissões revogadas de `anon`).
-- Sem conexão, o app avisa e não deixa registrar venda (não há fila offline).
+Cada push na `main` roda os testes, faz o build e publica no GitHub Pages.

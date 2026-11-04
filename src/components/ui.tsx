@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
 
 export function Marca({ tamanho = 40 }: { tamanho?: number }) {
   return (
@@ -13,8 +14,8 @@ export function Marca({ tamanho = 40 }: { tamanho?: number }) {
   )
 }
 
-/** Cabeçalho das telas internas: voltar + título + subtítulo */
-export function Topo({ titulo, sub, voltar = '/' }: { titulo: string; sub?: string; voltar?: string | -1 }) {
+/** Cabeçalho das telas internas: voltar + título + subtítulo + ação opcional à direita */
+export function Topo({ titulo, sub, voltar = '/', acao }: { titulo: string; sub?: string; voltar?: string | -1; acao?: ReactNode }) {
   const nav = useNavigate()
   return (
     <header className="flex items-center gap-3 pb-4 pt-2">
@@ -26,22 +27,44 @@ export function Topo({ titulo, sub, voltar = '/' }: { titulo: string; sub?: stri
       >
         <Icone nome="voltar" />
       </button>
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <h1 className="truncate text-2xl font-extrabold leading-tight">{titulo}</h1>
         {sub && <p className="truncate text-sm text-sec">{sub}</p>}
       </div>
+      {acao}
     </header>
   )
 }
 
-export function Pagina({ children, largura = 'max-w-lg' }: { children: ReactNode; largura?: string }) {
-  return <main className={`mx-auto w-full ${largura} px-4 pb-32 pt-[max(env(safe-area-inset-top),12px)]`}>{children}</main>
+/** Título das seções principais (as que aparecem na navegação) */
+export function TituloSecao({ titulo, sub, acao }: { titulo: string; sub?: string; acao?: ReactNode }) {
+  return (
+    <header className="flex items-end justify-between gap-3 pb-4 pt-2">
+      <div className="min-w-0">
+        <h1 className="truncate text-3xl font-extrabold leading-tight">{titulo}</h1>
+        {sub && <p className="truncate text-sm text-sec">{sub}</p>}
+      </div>
+      {acao}
+    </header>
+  )
 }
 
-/** Barra fixa no rodapé para o botão principal */
-export function Rodape({ children }: { children: ReactNode }) {
+export function Pagina({ children, largura = 'max-w-lg', comNav = false }: { children: ReactNode; largura?: string; comNav?: boolean }) {
   return (
-    <div className="fixed inset-x-0 bottom-0 z-20 border-t border-borda/60 bg-fundo/90 px-4 pb-[max(env(safe-area-inset-bottom),16px)] pt-3 backdrop-blur">
+    <main className={`mx-auto w-full ${largura} px-4 pt-[max(env(safe-area-inset-top),12px)] md:pt-6 ${comNav ? 'pb-44 md:pb-16' : 'pb-32'}`}>
+      {children}
+    </main>
+  )
+}
+
+/** Barra fixa no rodapé para o botão principal (acima da navegação, quando houver) */
+export function Rodape({ children, comNav = false }: { children: ReactNode; comNav?: boolean }) {
+  return (
+    <div
+      className={`fixed inset-x-0 z-20 border-t border-borda/60 bg-fundo/90 px-4 pt-3 backdrop-blur ${
+        comNav ? 'bottom-[calc(64px+env(safe-area-inset-bottom))] pb-3 md:bottom-0 md:pb-4' : 'bottom-0 pb-[max(env(safe-area-inset-bottom),16px)]'
+      }`}
+    >
       <div className="mx-auto max-w-lg">{children}</div>
     </div>
   )
@@ -57,18 +80,109 @@ export function Barra({ valor, total, baixo }: { valor: number; total: number; b
 }
 
 export function Aviso({ tipo = 'erro', children }: { tipo?: 'erro' | 'info'; children: ReactNode }) {
-  const cls =
-    tipo === 'erro' ? 'border-alerta/40 bg-[#2A1020] text-alerta' : 'border-destaque/50 bg-[#10204A] text-texto'
+  const cls = tipo === 'erro' ? 'border-alerta/40 bg-[#2A1020] text-alerta' : 'border-destaque/50 bg-[#10204A] text-texto'
   return (
     <div role={tipo === 'erro' ? 'alert' : 'status'} className={`flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm ${cls}`}>
       <Icone nome={tipo === 'erro' ? 'alerta' : 'info'} className="mt-0.5 shrink-0" />
-      <div>{children}</div>
+      <div className="min-w-0">{children}</div>
     </div>
   )
 }
 
 export function Carregando() {
   return <p className="py-16 text-center text-sec">Carregando…</p>
+}
+
+export function Vazio({ children }: { children: ReactNode }) {
+  return <p className="py-10 text-center text-sec">{children}</p>
+}
+
+/** Etiqueta pequena colorida */
+export function Selo({ cor = 'sec', children }: { cor?: 'sec' | 'positivo' | 'alerta' | 'claro'; children: ReactNode }) {
+  const cls = {
+    sec: 'bg-borda text-sec',
+    positivo: 'bg-positivo/15 text-positivo',
+    alerta: 'bg-alerta/15 text-alerta',
+    claro: 'bg-claro/15 text-claro',
+  }[cor]
+  return <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${cls}`}>{children}</span>
+}
+
+/** Grupo de botões de escolha única (segmentado) */
+export function Escolha<T extends string>({
+  opcoes,
+  valor,
+  onChange,
+  nome,
+  colunas,
+}: {
+  opcoes: { valor: T; rotulo: string; cor?: 'alerta' }[]
+  valor: T | null
+  onChange: (v: T) => void
+  nome: string
+  colunas?: number
+}) {
+  return (
+    <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${colunas ?? opcoes.length}, minmax(0, 1fr))` }}>
+      {opcoes.map((o) => (
+        <label
+          key={o.valor}
+          className={`btn min-h-12 cursor-pointer border px-1 text-sm sm:text-base ${
+            valor === o.valor
+              ? o.cor === 'alerta'
+                ? 'border-alerta bg-alerta text-fundo'
+                : 'border-destaque bg-destaque text-fundo'
+              : 'border-borda text-texto hover:border-destaque/60'
+          }`}
+        >
+          <input type="radio" name={nome} value={o.valor} checked={valor === o.valor} onChange={() => onChange(o.valor)} className="sr-only" />
+          {o.rotulo}
+        </label>
+      ))}
+    </div>
+  )
+}
+
+/** Campo de texto com rótulo */
+export function Campo({
+  id,
+  rotulo,
+  valor,
+  onChange,
+  modo,
+  placeholder,
+  dica,
+  autoFocus,
+  className = '',
+}: {
+  id: string
+  rotulo: string
+  valor: string
+  onChange: (v: string) => void
+  modo?: 'numeric' | 'decimal' | 'text' | 'tel'
+  placeholder?: string
+  dica?: string
+  autoFocus?: boolean
+  className?: string
+}) {
+  return (
+    <div className={`min-w-0 space-y-1.5 ${className}`}>
+      <label htmlFor={id} className="rotulo block truncate">
+        {rotulo}
+      </label>
+      <input
+        id={id}
+        className="campo num"
+        inputMode={modo}
+        value={valor}
+        placeholder={placeholder}
+        autoFocus={autoFocus}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={(e) => modo && modo !== 'text' && e.target.select()}
+      />
+      {dica && <p className="text-xs text-sec">{dica}</p>}
+    </div>
+  )
 }
 
 /** Diálogo de confirmação acessível (usa <dialog>) */
@@ -105,7 +219,7 @@ export function Confirmar({
         e.preventDefault()
         onCancelar()
       }}
-      className="m-auto w-[min(92vw,420px)] rounded-2xl border border-borda bg-cartao p-0 text-texto backdrop:bg-black/60"
+      className="m-auto w-[min(92vw,440px)] rounded-2xl border border-borda bg-cartao p-0 text-texto backdrop:bg-black/60"
     >
       <div className="space-y-3 p-5">
         <h2 className="text-lg font-bold">{titulo}</h2>
@@ -123,42 +237,74 @@ export function Confirmar({
   )
 }
 
-export function Abas() {
-  const caminho = useLocation().pathname
-  const atual = caminho.startsWith('/historico')
-    ? 'historico'
-    : caminho.startsWith('/produtos')
-      ? 'produtos'
-      : caminho.startsWith('/fiado')
-        ? 'fiado'
-        : caminho.startsWith('/relatorio')
-          ? 'relatorio'
-          : 'hoje'
-  const cls = (ativo: boolean) =>
-    `btn min-h-11 rounded-full px-5 ${ativo ? 'bg-destaque text-fundo' : 'border border-borda text-texto hover:border-destaque/60'}`
+// ---------------------------------------------------------------- navegação
+
+const SECOES = [
+  { para: '/', rotulo: 'Vender', icone: 'cesta', fim: true },
+  { para: '/fiado', rotulo: 'Fiado', icone: 'carteira' },
+  { para: '/clientes', rotulo: 'Clientes', icone: 'pessoas' },
+  { para: '/historico', rotulo: 'Histórico', icone: 'calendario' },
+] as const
+
+const SECOES_DESKTOP = [...SECOES, { para: '/produtos', rotulo: 'Produtos', icone: 'caixa' }, { para: '/relatorio', rotulo: 'Relatório', icone: 'grafico' }] as const
+
+/** Barra fixa embaixo (celular) e menu no topo (computador) */
+export function Navegacao() {
   return (
-    <nav className="flex gap-2" aria-label="Seções">
-      <Link to="/" className={cls(atual === 'hoje')}>
-        Hoje
-      </Link>
-      <Link to="/historico" className={cls(atual === 'historico')}>
-        Histórico
-      </Link>
-      <Link to="/relatorio" className={cls(atual === 'relatorio')}>
-        Relatório
-      </Link>
-      <Link to="/fiado" className={cls(atual === 'fiado')}>
-        Fiado
-      </Link>
-      <Link to="/produtos" className={cls(atual === 'produtos')}>
-        Produtos
-      </Link>
-    </nav>
+    <>
+      <header className="sticky top-0 z-30 hidden border-b border-borda/60 bg-fundo/90 backdrop-blur md:block">
+        <div className="mx-auto flex max-w-6xl items-center gap-6 px-8 py-3">
+          <Link to="/" className="flex items-center gap-3">
+            <Marca tamanho={40} />
+            <span className="text-lg font-extrabold">Controle de Vendas</span>
+          </Link>
+          <nav className="flex flex-1 gap-1" aria-label="Seções">
+            {SECOES_DESKTOP.map((s) => (
+              <NavLink
+                key={s.para}
+                to={s.para}
+                end={'fim' in s}
+                className={({ isActive }) =>
+                  `btn min-h-10 rounded-full px-4 text-sm ${isActive ? 'bg-destaque text-fundo' : 'text-sec hover:text-texto'}`
+                }
+              >
+                {s.rotulo}
+              </NavLink>
+            ))}
+          </nav>
+          <button type="button" className="btn-secundario min-h-10" onClick={() => supabase.auth.signOut()} title="Sair">
+            <Icone nome="sair" tamanho={18} /> Sair
+          </button>
+        </div>
+      </header>
+
+      <nav
+        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-borda bg-[#081028]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
+        aria-label="Seções"
+      >
+        {[...SECOES, { para: '/mais', rotulo: 'Mais', icone: 'menu' } as const].map((s) => (
+          <NavLink
+            key={s.para}
+            to={s.para}
+            end={'fim' in s}
+            className={({ isActive }) =>
+              `flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-semibold ${isActive ? 'text-destaque' : 'text-sec'}`
+            }
+          >
+            <Icone nome={s.icone} tamanho={22} />
+            {s.rotulo}
+          </NavLink>
+        ))}
+      </nav>
+    </>
   )
 }
 
-const caminhos: Record<string, ReactNode> = {
+// ---------------------------------------------------------------- ícones
+
+const caminhos = {
   voltar: <path d="M15 18l-6-6 6-6" />,
+  avancar: <path d="M9 18l6-6-6-6" />,
   alerta: (
     <>
       <path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z" />
@@ -177,10 +323,10 @@ const caminhos: Record<string, ReactNode> = {
       <path d="M8 12l3 3 5-6" />
     </>
   ),
-  relogio: (
+  calendario: (
     <>
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 6v6l4 2" />
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <path d="M16 2v4M8 2v4M3 10h18" />
     </>
   ),
   imagem: (
@@ -196,21 +342,53 @@ const caminhos: Record<string, ReactNode> = {
       <path d="M3 8v8l9 5 9-5V8M12 13v8" />
     </>
   ),
+  cesta: (
+    <>
+      <path d="M5 8h14l-1.5 11a2 2 0 01-2 1.7h-7a2 2 0 01-2-1.7L5 8z" />
+      <path d="M9 8V6a3 3 0 016 0v2" />
+    </>
+  ),
   carteira: (
     <>
       <rect x="2" y="6" width="20" height="14" rx="2" />
       <path d="M2 10h20M16 15h2M6 6V4h12v2" />
     </>
   ),
-  lapis:<path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />,
+  pessoas: (
+    <>
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2.5 20c0-3.5 3-5.5 6.5-5.5s6.5 2 6.5 5.5" />
+      <path d="M16 4.5a3.5 3.5 0 010 7M18 14.6c2.2.6 3.5 2.4 3.5 5.4" />
+    </>
+  ),
+  grafico: (
+    <>
+      <path d="M3 3v18h18" />
+      <path d="M7 15l4-4 3 3 5-6" />
+    </>
+  ),
+  menu: <path d="M4 6h16M4 12h16M4 18h16" />,
+  lapis: <path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />,
+  lixo: (
+    <>
+      <path d="M3 6h18M8 6V4h8v2M6 6l1 14a2 2 0 002 2h6a2 2 0 002-2l1-14" />
+    </>
+  ),
   pessoa: (
     <>
       <circle cx="12" cy="8" r="4" />
       <path d="M4 21c0-4 4-6 8-6s8 2 8 6" />
     </>
   ),
+  busca: (
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <path d="M21 21l-4.3-4.3" />
+    </>
+  ),
   mais: <path d="M12 5v14M5 12h14" />,
   menos: <path d="M5 12h14" />,
+  fechar: <path d="M18 6L6 18M6 6l12 12" />,
   compartilhar: (
     <>
       <path d="M4 12v7a2 2 0 002 2h12a2 2 0 002-2v-7" />
@@ -235,9 +413,17 @@ const caminhos: Record<string, ReactNode> = {
       <path d="M21 17a9 9 0 00-15-6.7L3 13" />
     </>
   ),
-}
+  cadeado: (
+    <>
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 018 0v4" />
+    </>
+  ),
+} satisfies Record<string, ReactNode>
 
-export function Icone({ nome, className = '', tamanho = 20 }: { nome: keyof typeof caminhos; className?: string; tamanho?: number }) {
+export type NomeIcone = keyof typeof caminhos
+
+export function Icone({ nome, className = '', tamanho = 20 }: { nome: NomeIcone; className?: string; tamanho?: number }) {
   return (
     <svg
       width={tamanho}

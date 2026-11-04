@@ -3,12 +3,13 @@ import { Link } from 'react-router-dom'
 import { diasDoPeriodo } from '../lib/api'
 import { dataCurta, diaDaSemana, hojeBelem } from '../lib/datas'
 import { porcentagem, reais } from '../lib/dinheiro'
-import { agregarRelatorio, deslocar, nomePeriodo, periodoDe, type Periodo, type TipoPeriodo } from '../lib/relatorio'
+import { agregarRelatorio, deslocar, nomePeriodo, periodoDe, type Periodo, type TipoPeriodo } from '../lib/calculos'
+import { ROTULO_PAGAMENTO } from '../lib/tipos'
 import { useCarregar } from '../hooks'
-import { gerarPng } from '../components/ImagemResumo'
-import ImagemRelatorio from '../components/ImagemRelatorio'
-import { Abas, Aviso, Barra, Carregando, Icone, Pagina, Topo } from '../components/ui'
+import { baixar, compartilharOuBaixar, gerarPng, ImagemRelatorio } from '../components/Imagens'
+import { Aviso, Barra, Carregando, Icone, Pagina, TituloSecao, Vazio } from '../components/ui'
 
+/** Relatório da semana ou do mês (dias fechados), com imagem para compartilhar. */
 export default function Relatorio() {
   const hoje = hojeBelem()
   const [periodo, setPeriodo] = useState<Periodo>(() => periodoDe('semana', hoje))
@@ -18,15 +19,11 @@ export default function Relatorio() {
   const [msg, setMsg] = useState<string | null>(null)
   const no = useRef<HTMLDivElement>(null)
 
-  useEffect(() => setPng(null), [periodo.inicio, periodo.fim])
+  useEffect(() => setPng(null), [periodo.inicio, periodo.fim, dados])
 
-  const r = dados ? agregarRelatorio(dados.fechados, dados.situacao) : null
-  const futuro = periodo.inicio > hoje
+  const r = dados ? agregarRelatorio(dados.fechados) : null
   const nomeArq = `relatorio-${periodo.tipo}-${periodo.inicio}.png`
-
-  function trocarTipo(tipo: TipoPeriodo) {
-    setPeriodo(periodoDe(tipo, periodo.tipo === tipo ? periodo.inicio : hoje))
-  }
+  const maxDia = r ? Math.max(1, ...r.porDia.map((d) => d.faturamento)) : 1
 
   async function compartilhar() {
     if (!no.current) return
@@ -35,51 +32,23 @@ export default function Relatorio() {
     try {
       const url = png ?? (await gerarPng(no.current))
       setPng(url)
-      const file = new File([await (await fetch(url)).blob()], nomeArq, { type: 'image/png' })
-      if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: `Relatório ${nomePeriodo(periodo)}` })
-      else {
-        baixar(url)
-        setMsg('Este aparelho não compartilha arquivos; a imagem foi baixada.')
-      }
-    } catch (e) {
-      if ((e as Error).name !== 'AbortError') setMsg('Não foi possível gerar a imagem.')
+      if (!(await compartilharOuBaixar([url], [nomeArq], `Relatório ${nomePeriodo(periodo)}`))) setMsg('Este aparelho não compartilha arquivos; a imagem foi baixada.')
+    } catch {
+      setMsg('Não foi possível gerar a imagem.')
     } finally {
       setGerando(false)
     }
   }
 
-  function baixar(url: string) {
-    const a = document.createElement('a')
-    a.href = url
-    a.download = nomeArq
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-  }
-
-  const maxDia = r ? Math.max(1, ...r.porDia.map((d) => d.faturamento)) : 1
+  const trocarTipo = (tipo: TipoPeriodo) => setPeriodo(periodoDe(tipo, periodo.tipo === tipo ? periodo.inicio : hoje))
 
   return (
-    <Pagina largura="max-w-3xl">
-      <div className="md:hidden">
-        <Topo titulo="Relatório" voltar="/historico" />
-      </div>
-      <div className="hidden pb-5 pt-6 md:block">
-        <h1 className="mb-4 text-3xl font-extrabold">Relatório</h1>
-        <Abas />
-      </div>
+    <Pagina largura="max-w-3xl" comNav>
+      <TituloSecao titulo="Relatório" sub="Soma dos dias fechados no período" />
 
-      {/* Período */}
       <div className="mb-3 grid grid-cols-2 gap-1 rounded-2xl border border-borda bg-cartao p-1" role="tablist" aria-label="Período">
         {(['semana', 'mes'] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            role="tab"
-            aria-selected={periodo.tipo === t}
-            className={`btn min-h-11 ${periodo.tipo === t ? 'bg-destaque text-fundo' : 'text-sec'}`}
-            onClick={() => trocarTipo(t)}
-          >
+          <button key={t} type="button" role="tab" aria-selected={periodo.tipo === t} className={`btn min-h-11 ${periodo.tipo === t ? 'bg-destaque text-fundo' : 'text-sec'}`} onClick={() => trocarTipo(t)}>
             {t === 'semana' ? 'Semana' : 'Mês'}
           </button>
         ))}
@@ -99,19 +68,18 @@ export default function Relatorio() {
           disabled={deslocar(periodo, 1).inicio > hoje}
           aria-label="Próximo período"
         >
-          <Icone nome="voltar" className="rotate-180" />
+          <Icone nome="avancar" />
         </button>
       </div>
 
       {erro && <Aviso>{erro}</Aviso>}
       {carregando && !dados ? (
         <Carregando />
-      ) : !r || futuro ? null : (
+      ) : !r ? null : (
         <div className="num space-y-3">
           {dados!.abertos.length > 0 && (
             <Aviso>
-              {dados!.abertos.length === 1 ? 'Um dia ainda está aberto' : `${dados!.abertos.length} dias ainda estão abertos`} e não entra
-              {dados!.abertos.length === 1 ? '' : 'm'} no relatório:{' '}
+              Dia(s) ainda aberto(s), fora do relatório:{' '}
               {dados!.abertos.map((d, i) => (
                 <span key={d.id}>
                   {i > 0 && ', '}
@@ -125,7 +93,7 @@ export default function Relatorio() {
           )}
 
           {r.dias === 0 ? (
-            <p className="py-10 text-center text-sec">Nenhum dia finalizado neste período.</p>
+            <Vazio>Nenhum dia fechado neste período.</Vazio>
           ) : (
             <>
               <section className={`cartao p-5 ${r.lucro < 0 ? 'border-alerta/40' : 'border-positivo/30 bg-gradient-to-br from-[#0D2A2E] to-cartao'}`}>
@@ -137,62 +105,41 @@ export default function Relatorio() {
               </section>
 
               <div className="grid grid-cols-2 gap-3">
-                <Caixa titulo="Faturamento" valor={reais(r.faturamento)} sub={`${r.unidades} unidades vendidas`} />
-                <Caixa titulo="Recebido" valor={reais(r.recebido)} sub="Pix + Dinheiro + Cartão" />
-                <Caixa
-                  titulo="Fiado a receber"
-                  valor={reais(r.fiadoAReceber)}
-                  sub={`de ${reais(r.pagamentos.fiado)} vendido fiado`}
-                  cor={r.fiadoAReceber ? 'text-alerta' : ''}
-                />
-                <Caixa
-                  titulo="Gasto com material"
-                  valor={reais(r.gasto)}
-                  sub={r.diasSemGasto ? `${r.diasSemGasto} ${r.diasSemGasto === 1 ? 'dia' : 'dias'} sem gasto (N/A)` : 'todos os dias com gasto'}
-                />
+                <Caixa titulo="Faturamento" valor={reais(r.faturamento)} sub={`${r.unidades} itens vendidos`} />
+                <Caixa titulo="Recebido" valor={reais(r.recebido)} sub="inclui fiado pago" />
+                <Caixa titulo="Fiado a receber" valor={reais(r.aReceber)} sub="vendido nestes dias" cor={r.aReceber ? 'text-alerta' : ''} />
+                <Caixa titulo="Gasto com material" valor={reais(r.gasto)} sub={r.diasSemGasto ? `${r.diasSemGasto} dia(s) sem gasto` : 'todos os dias com gasto'} />
                 <Caixa titulo="Vendas" valor={String(r.vendas)} sub={r.ticketMedio ? `ticket médio ${reais(r.ticketMedio)}` : '—'} />
                 <Caixa titulo="Descontos" valor={reais(r.descontos)} sub={r.bruto ? `${porcentagem(r.descontos / r.bruto)} do bruto` : '—'} />
               </div>
 
-              <section className="cartao space-y-2 p-4">
-                <p className="rotulo">Recebido por</p>
-                {(
-                  [
-                    ['Pix', r.pagamentos.pix],
-                    ['Dinheiro', r.pagamentos.dinheiro],
-                    ['Cartão', r.pagamentos.cartao],
-                    ['Fiado (vendido)', r.pagamentos.fiado],
-                  ] as const
-                ).map(([t, v]) => (
-                  <div key={t} className="flex justify-between">
-                    <span className="text-sec">{t}</span>
-                    <span className="font-bold">{reais(v)}</span>
-                  </div>
-                ))}
+              <section className="cartao space-y-1.5 p-4">
+                <p className="rotulo mb-1">Por forma de pagamento</p>
+                {(['pix', 'dinheiro', 'cartao', 'fiado', 'nao_informado'] as const)
+                  .filter((k) => k !== 'nao_informado' || r.porForma[k] > 0)
+                  .map((k) => (
+                    <div key={k} className="flex justify-between">
+                      <span className="text-sec">{ROTULO_PAGAMENTO[k]}</span>
+                      <span className="font-bold">{reais(r.porForma[k])}</span>
+                    </div>
+                  ))}
               </section>
 
               <section className="cartao p-4">
                 <h2 className="mb-2 text-lg font-bold">Por produto</h2>
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="rotulo text-left">
-                      <th className="py-2 font-semibold">Produto</th>
-                      <th className="py-2 text-right font-semibold">Vend.</th>
-                      <th className="py-2 text-right font-semibold">Sobra</th>
-                      <th className="py-2 text-right font-semibold">Faturado</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {r.produtos.map((p) => (
-                      <tr key={p.nome} className="border-t border-borda/60">
-                        <td className="py-2">{p.nome}</td>
-                        <td className="py-2 text-right">{p.vendido}</td>
-                        <td className="py-2 text-right">{p.sobra}</td>
-                        <td className="py-2 text-right font-bold">{reais(p.faturado)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <ul className="divide-y divide-borda/60">
+                  {r.produtos.map((p) => (
+                    <li key={p.nome} className="flex justify-between gap-3 py-2">
+                      <span className="min-w-0 truncate">{p.nome}</span>
+                      <span className="shrink-0">
+                        <span className="text-sec">
+                          {p.vendido} {p.unidade} ·{' '}
+                        </span>
+                        <strong>{reais(p.faturado)}</strong>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </section>
 
               <section className="cartao p-4">
@@ -225,13 +172,13 @@ export default function Relatorio() {
                 <section className="cartao p-4">
                   <h2 className="mb-2 text-lg font-bold">Clientes que mais compraram</h2>
                   <ol className="divide-y divide-borda/60">
-                    {r.clientes.map((cl, i) => (
-                      <li key={cl.nome} className="flex justify-between gap-3 py-2">
+                    {r.clientes.map((c, i) => (
+                      <li key={c.nome} className="flex justify-between gap-3 py-2">
                         <span className="min-w-0 truncate">
-                          <span className="text-sec">{i + 1}.</span> {cl.nome}
+                          <span className="text-sec">{i + 1}.</span> {c.nome}
                         </span>
                         <span className="shrink-0 font-bold">
-                          {reais(cl.total)} <span className="font-normal text-sec">· {cl.compras}×</span>
+                          {reais(c.total)} <span className="font-normal text-sec">· {c.compras}×</span>
                         </span>
                       </li>
                     ))}
@@ -244,11 +191,10 @@ export default function Relatorio() {
                 <Icone nome="compartilhar" /> {gerando ? 'Gerando imagem…' : 'Compartilhar imagem do relatório'}
               </button>
               {png && (
-                <button type="button" className="btn-secundario min-h-12 w-full" onClick={() => baixar(png)}>
+                <button type="button" className="btn-secundario min-h-12 w-full" onClick={() => baixar([png], [nomeArq])}>
                   <Icone nome="baixar" /> Baixar PNG
                 </button>
               )}
-
               <div aria-hidden style={{ position: 'fixed', left: -20000, top: 0, pointerEvents: 'none' }}>
                 <ImagemRelatorio ref={no} r={r} periodo={periodo} />
               </div>

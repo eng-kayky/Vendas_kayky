@@ -1,26 +1,30 @@
 import { lazy, Suspense } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { useOnline, useSessao } from './hooks'
-import { configurado } from './lib/supabase'
-import { Carregando } from './components/ui'
+import { Carregando, Navegacao } from './components/ui'
 import Login from './pages/Login'
-import Hoje from './pages/Hoje'
+import Inicio from './pages/Inicio'
+import Dia from './pages/Dia'
+import Venda from './pages/Venda'
 import AbrirDia from './pages/AbrirDia'
-import RegistrarVenda from './pages/RegistrarVenda'
-import VendasHoje from './pages/VendasHoje'
-import Finalizar from './pages/Finalizar'
-import Resultado from './pages/Resultado'
+import ProdutosDoDia from './pages/ProdutosDoDia'
+import FecharDia from './pages/FecharDia'
+import Imagens from './pages/Imagens'
 import Historico from './pages/Historico'
-import HistoricoDia from './pages/HistoricoDia'
-import LancarDia from './pages/LancarDia'
-import Produtos from './pages/Produtos'
-import EditarDia from './pages/EditarDia'
 import Fiado from './pages/Fiado'
-import DiaAnterior from './pages/DiaAnterior'
+import Clientes from './pages/Clientes'
+import ClienteFicha from './pages/ClienteFicha'
+import Produtos from './pages/Produtos'
 import Relatorio from './pages/Relatorio'
+import Mais from './pages/Mais'
 
-// Prévia da imagem com dados de exemplo; não vai para o build de produção
+// Prévia das imagens com dados de exemplo; não vai para o build de produção
 const DevImagem = import.meta.env.DEV ? lazy(() => import('./pages/DevImagem')) : null
+
+/** Telas principais mostram a navegação; telas de tarefa (vender, abrir, fechar…) ficam em tela cheia. */
+const comNavegacao = (p: string) =>
+  p === '/' || ['/fiado', '/clientes', '/historico', '/produtos', '/relatorio', '/mais'].some((s) => p === s || p.startsWith(`${s}/`)) ||
+  /^\/dia\/[^/]+$/.test(p)
 
 export default function App() {
   const sessao = useSessao()
@@ -35,18 +39,10 @@ export default function App() {
     )
   }
 
-  if (!configurado) {
-    return (
-      <p className="mx-auto max-w-md p-6 text-center text-sec">
-        Configure <code>VITE_SUPABASE_URL</code> e <code>VITE_SUPABASE_ANON_KEY</code> no arquivo <code>.env</code>.
-      </p>
-    )
-  }
-
   return (
     <>
       {!online && (
-        <div role="alert" className="sticky top-0 z-30 bg-alerta px-4 py-2 text-center text-sm font-semibold text-fundo">
+        <div role="alert" className="sticky top-0 z-40 bg-alerta px-4 py-2 text-center text-sm font-semibold text-fundo">
           Sem conexão. Não dá para registrar vendas até a internet voltar.
         </div>
       )}
@@ -55,25 +51,27 @@ export default function App() {
       ) : sessao === null ? (
         <Login />
       ) : (
-        <Routes>
-          <Route path="/" element={<Hoje />} />
-          <Route path="/abrir" element={<AbrirDia />} />
-          <Route path="/vender/:itemId" element={<RegistrarVenda />} />
-          <Route path="/venda/:vendaId" element={<RegistrarVenda />} />
-          <Route path="/vendas" element={<VendasHoje />} />
-          <Route path="/finalizar/:diaId" element={<Finalizar />} />
-          <Route path="/resultado/:diaId" element={<Resultado />} />
-          <Route path="/historico" element={<Historico />} />
-          <Route path="/historico/:diaId" element={<HistoricoDia />} />
-          <Route path="/lancar" element={<LancarDia />} />
-          <Route path="/lancar/:diaId" element={<LancarDia />} />
-          <Route path="/produtos" element={<Produtos />} />
-          <Route path="/fiado" element={<Fiado />} />
-          <Route path="/dia/:diaId" element={<DiaAnterior />} />
-          <Route path="/relatorio" element={<Relatorio />} />
-          <Route path="/editar-dia/:diaId" element={<EditarDia />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <>
+          {comNavegacao(pathname) && <Navegacao />}
+          <Routes>
+            <Route path="/" element={<Inicio />} />
+            <Route path="/abrir" element={<AbrirDia />} />
+            <Route path="/dia/:diaId" element={<Dia />} />
+            <Route path="/dia/:diaId/venda" element={<Venda />} />
+            <Route path="/dia/:diaId/produtos" element={<ProdutosDoDia />} />
+            <Route path="/dia/:diaId/fechar" element={<FecharDia />} />
+            <Route path="/dia/:diaId/imagem" element={<Imagens />} />
+            <Route path="/venda/:pedidoId" element={<Venda />} />
+            <Route path="/historico" element={<Historico />} />
+            <Route path="/fiado" element={<Fiado />} />
+            <Route path="/clientes" element={<Clientes />} />
+            <Route path="/clientes/:clienteId" element={<ClienteFicha />} />
+            <Route path="/produtos" element={<Produtos />} />
+            <Route path="/relatorio" element={<Relatorio />} />
+            <Route path="/mais" element={<Mais />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </>
       )}
     </>
   )
