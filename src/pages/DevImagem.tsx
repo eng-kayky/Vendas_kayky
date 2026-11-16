@@ -9,6 +9,7 @@ import { gerarPng, ImagemRelatorio, ImagemResumo, ImagemVendas, paginasDeVendas 
 import PainelDia from '../components/PainelDia'
 import { Navegacao } from '../components/ui'
 import Venda from './Venda'
+import ReceberFiado from '../components/ReceberFiado'
 
 const itens = [
   { id: 'f', produtoId: 'pf', nome: 'Empada de frango', unidade: 'un', produzido: 30, preco: 600 },
@@ -44,6 +45,7 @@ const pedidos: Pedido[] = Array.from({ length: 22 }, (_, i) => {
     observacao: null,
     fiadoPagoEm: pago ? '2026-11-05' : null,
     fiadoPagoCom: pago ? 'pix' : null,
+    recebimentos: pago ? [{ lote: `l${i}`, valor: sub - desconto, forma: 'pix' as const, data: '2026-11-05' }] : pagamento === 'fiado' ? [{ lote: `m${i}`, valor: 300, forma: 'dinheiro' as const, data: '2026-11-05' }] : [],
     criadoEm: `2026-11-04T${String(13 + Math.floor(i / 3)).padStart(2, '0')}:${String((i * 7) % 60).padStart(2, '0')}:00Z`,
     itens: linhas,
   }
@@ -58,6 +60,23 @@ const d: DiaCompleto = {
 }
 
 export default function DevImagem() {
+  if (window.location.hash.includes('receber'))
+    return (
+      <ReceberFiado
+        alvo={{
+          clienteId: 'c',
+          cliente: 'Maria das Graças',
+          falta: 3100,
+          vendas: [
+            { pedidoId: 'a', data: '2026-11-02', itens: '2× Empada de frango', falta: 900 },
+            { pedidoId: 'b', data: '2026-11-05', itens: '1× Bolo de pote, 1× Pudim', falta: 1500 },
+            { pedidoId: 'c', data: '2026-11-10', itens: '1× Torta de limão', falta: 700 },
+          ],
+        }}
+        onFechar={() => {}}
+        onRecebido={() => {}}
+      />
+    )
   if (window.location.hash.includes('venda')) return <Venda exemplo={{ d, produto: 'f' }} />
   if (window.location.hash.includes('painel') || fechado)
     return (

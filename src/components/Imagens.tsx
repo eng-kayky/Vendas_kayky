@@ -289,7 +289,9 @@ export const ImagemVendas = forwardRef<HTMLDivElement, { d: DiaCompleto; r: Resu
                         {fiado
                           ? l.fiadoPagoEm
                             ? `Fiado pago ${curto[l.fiadoPagoCom!]} ${dataCurta(l.fiadoPagoEm).slice(0, 5)}`
-                            : 'Fiado · a receber'
+                            : l.fiadoPago > 0
+                              ? `Fiado · pagou ${reais(l.fiadoPago)}`
+                              : 'Fiado · a receber'
                           : ROTULO_PAGAMENTO[l.pagamento]}
                       </td>
                     </tr>

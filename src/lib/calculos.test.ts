@@ -38,6 +38,8 @@ function pedido(p: Omit<Partial<Pedido>, 'itens'> & { itens: [string, number][] 
     observacao: null,
     fiadoPagoEm: p.fiadoPagoEm ?? null,
     fiadoPagoCom: p.fiadoPagoCom ?? null,
+    // fiado quitado = um pagamento integral; parcial pode vir explícito
+    recebimentos: p.recebimentos ?? (p.fiadoPagoEm ? [{ lote: 'l', valor: sub - desconto, forma: p.fiadoPagoCom ?? 'pix', data: p.fiadoPagoEm }] : []),
     criadoEm: p.criadoEm ?? '2026-11-04T15:00:00Z',
     itens: linhas,
   }
@@ -81,6 +83,26 @@ describe('resumo do dia', () => {
     expect(r.fiadoPago).toBe(600)
     expect(r.fiadoPagoPorForma.pix).toBe(600)
     expect(r.porForma).toMatchObject({ pix: 1600, dinheiro: 600, fiado: 1600 })
+  })
+
+  it('fiado com pagamento parcial: o pago entra no recebido, o resto fica a receber', () => {
+    const parcial = pedido({
+      itens: [['u', 2]], // 1000
+      pagamento: 'fiado',
+      cliente: 'Caio',
+      recebimentos: [
+        { lote: 'a', valor: 300, forma: 'dinheiro', data: '2026-11-06' },
+        { lote: 'b', valor: 200, forma: 'pix', data: '2026-11-08' },
+      ],
+    })
+    const rp = resumirDia(dia([parcial]))
+    expect(rp.faturamento).toBe(1000)
+    expect(rp.fiadoPago).toBe(500)
+    expect(rp.aReceber).toBe(500)
+    expect(rp.recebido).toBe(500)
+    expect(rp.fiadoPagoPorForma).toEqual({ pix: 200, dinheiro: 300, cartao: 0 })
+    const linha = vendasPorProduto(dia([parcial]))[0].linhas[0]
+    expect(linha).toMatchObject({ fiadoPago: 500, totalVenda: 1000, fiadoPagoEm: null })
   })
 
   it('reserva tira do estoque mas não é venda', () => {

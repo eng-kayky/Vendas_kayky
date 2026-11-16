@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { carregarCliente, mensagemErro, receberFiados, salvarCliente } from '../lib/api'
+import { carregarCliente, mensagemErro, salvarCliente } from '../lib/api'
 import { dataCurta, diaDaSemana } from '../lib/datas'
 import { reais } from '../lib/dinheiro'
-import { FORMAS_RECEBIMENTO, type FormaRecebimento } from '../lib/tipos'
 import { useCarregar, useOnline } from '../hooks'
 import { SeloPagamento } from '../components/ListaVendas'
-import { Aviso, Campo, Carregando, Confirmar, Escolha, Icone, Pagina, Topo, Vazio } from '../components/ui'
+import ReceberFiado from '../components/ReceberFiado'
+import { Aviso, Campo, Carregando, Icone, Pagina, Topo, Vazio } from '../components/ui'
 
 /** Ficha do cliente: tudo que comprou, quanto deve, editar nome e telefone. */
 export default function ClienteFicha() {
@@ -15,7 +15,6 @@ export default function ClienteFicha() {
   const { dados, erro: erroCarga, carregando, recarregar } = useCarregar(() => carregarCliente(clienteId), [clienteId])
   const [editando, setEditando] = useState<{ nome: string; telefone: string } | null>(null)
   const [receber, setReceber] = useState(false)
-  const [forma, setForma] = useState<FormaRecebimento>('pix')
   const [ocupado, setOcupado] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
 
@@ -25,8 +24,12 @@ export default function ClienteFicha() {
   const { cliente, compras } = dados
   const concluidas = compras.filter((c) => c.status === 'concluido')
   const total = concluidas.reduce((s, c) => s + c.total, 0)
-  const devendo = concluidas.filter((c) => c.pagamento === 'fiado' && !c.fiadoPagoEm)
-  const deve = devendo.reduce((s, c) => s + c.total, 0)
+  // fiado em aberto (inclusive o pago em parte), da compra mais antiga para a mais nova
+  const devendo = concluidas
+    .filter((c) => c.pagamento === 'fiado' && c.pago < c.total)
+    .map((c) => ({ ...c, falta: c.total - c.pago }))
+    .sort((a, b) => a.data.localeCompare(b.data))
+  const deve = devendo.reduce((s, c) => s + c.falta, 0)
   const zap = cliente.telefone?.replace(/\D/g, '')
 
   async function executar(acao: () => Promise<unknown>) {
@@ -104,7 +107,7 @@ export default function ClienteFicha() {
         <div className="mt-3 flex flex-wrap gap-2">
           {deve > 0 && (
             <button type="button" className="btn-primario flex-1" onClick={() => setReceber(true)} disabled={!online}>
-              Receber {reais(deve)}
+              Receber (deve {reais(deve)})
             </button>
           )}
           {zap && (
@@ -136,7 +139,11 @@ export default function ClienteFicha() {
                 </div>
                 <div className="shrink-0 text-right">
                   <p className="font-bold">{reais(c.total)}</p>
-                  <SeloPagamento p={c} />
+                  {c.pagamento === 'fiado' && c.pago > 0 && c.pago < c.total ? (
+                    <span className="text-xs font-semibold text-alerta">pagou {reais(c.pago)} · falta {reais(c.total - c.pago)}</span>
+                  ) : (
+                    <SeloPagamento p={c} />
+                  )}
                 </div>
               </Link>
             </li>
@@ -144,26 +151,11 @@ export default function ClienteFicha() {
         </ul>
       )}
 
-      <Confirmar
-        aberto={receber}
-        titulo={`${cliente.nome} pagou ${reais(deve)}?`}
-        confirmar="Confirmar recebimento"
-        ocupado={ocupado}
-        onConfirmar={() => executar(() => receberFiados(devendo.map((c) => c.pedidoId), forma))}
-        onCancelar={() => setReceber(false)}
-      >
-        <div className="space-y-3">
-          <ul className="space-y-0.5">
-            {devendo.map((c) => (
-              <li key={c.pedidoId}>
-                {dataCurta(c.data)} · {c.itens} · {reais(c.total)}
-              </li>
-            ))}
-          </ul>
-          <p className="rotulo">Pagou com</p>
-          <Escolha nome="forma" opcoes={FORMAS_RECEBIMENTO} valor={forma} onChange={setForma} />
-        </div>
-      </Confirmar>
+      <ReceberFiado
+        alvo={receber ? { clienteId: cliente.id, cliente: cliente.nome, falta: deve, vendas: devendo } : null}
+        onFechar={() => setReceber(false)}
+        onRecebido={recarregar}
+      />
     </Pagina>
   )
 }

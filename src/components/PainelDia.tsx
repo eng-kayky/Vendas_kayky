@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { excluirDia, mensagemErro, reabrirDia } from '../lib/api'
 import { dataLonga, diaDaSemana, diaMes, hojeBelem, hora } from '../lib/datas'
 import { porcentagem, reais } from '../lib/dinheiro'
-import { estoqueBaixo, resumirDia, vendasPorProduto, type LinhaProduto, type ResumoDia } from '../lib/calculos'
+import { estoqueBaixo, fiadoAberto, resumirDia, vendasPorProduto, type LinhaProduto, type ResumoDia } from '../lib/calculos'
 import { ROTULO_PAGAMENTO, type DiaCompleto } from '../lib/tipos'
 import { useOnline } from '../hooks'
 import ListaVendas, { descreverPedido, SeloPagamento } from './ListaVendas'
@@ -49,7 +49,7 @@ function Colunas({ principal, lateral }: { principal: ReactNode; lateral: ReactN
 /** Faturamento do dia e para onde foi: recebido · fiado a receber · reservado. */
 function Resumo({ d, r }: { d: DiaCompleto; r: ResumoDia }) {
   const base = Math.max(1, r.recebido + r.aReceber + r.reservadoValor)
-  const devedores = [...new Set(d.pedidos.filter((p) => p.status === 'concluido' && p.pagamento === 'fiado' && !p.fiadoPagoEm).map((p) => p.cliente))]
+  const devedores = [...new Set(d.pedidos.filter(fiadoAberto).map((p) => p.cliente))]
   return (
     <section className="painel p-5">
       <Indicador
@@ -319,7 +319,7 @@ function DiaFechado({ d, r, ehHoje, onMudou }: { d: DiaCompleto; r: ResumoDia; e
                       <span className="shrink-0 text-sec">{l.quantidade}×</span>
                       <span className="w-20 shrink-0 text-right font-bold">{reais(l.valor)}</span>
                       <span className="hidden w-36 shrink-0 text-right sm:block">
-                        <SeloPagamento p={{ status: 'concluido', pagamento: l.pagamento, fiadoPagoEm: l.fiadoPagoEm, fiadoPagoCom: l.fiadoPagoCom }} />
+                        <SeloPagamento p={{ status: 'concluido', pagamento: l.pagamento, fiadoPagoEm: l.fiadoPagoEm, fiadoPagoCom: l.fiadoPagoCom }} pago={l.fiadoPago} total={l.totalVenda} />
                       </span>
                     </li>
                   ))}

@@ -21,8 +21,13 @@ export function valoresPorItem(p: Pick<Pedido, 'itens' | 'total'>): number[] {
   })
 }
 
-export const fiadoPago = (p: Pedido) => p.pagamento === 'fiado' && p.fiadoPagoEm !== null
-export const fiadoAberto = (p: Pedido) => p.status === 'concluido' && p.pagamento === 'fiado' && p.fiadoPagoEm === null
+/** Quanto já foi pago de uma venda fiado (soma dos pagamentos, parciais ou não). */
+export const pagoDoFiado = (p: Pick<Pedido, 'pagamento' | 'recebimentos'>) =>
+  p.pagamento === 'fiado' ? p.recebimentos.reduce((s, r) => s + r.valor, 0) : 0
+/** Quanto ainda falta pagar de uma venda fiado. */
+export const faltaDoFiado = (p: Pick<Pedido, 'pagamento' | 'recebimentos' | 'total' | 'status'>) =>
+  p.status === 'concluido' && p.pagamento === 'fiado' ? Math.max(0, p.total - pagoDoFiado(p)) : 0
+export const fiadoAberto = (p: Pedido) => faltaDoFiado(p) > 0
 
 /** Produto "baixo" quando restam 20% ou menos (só com controle de estoque). */
 export const estoqueBaixo = (restante: number | null, produzido: number | null) =>
@@ -84,10 +89,14 @@ export function resumirDia(d: DiaCompleto): ResumoDia {
     faturamento += p.total
     bruto += subtotalPedido(p)
     if (p.pagamento) porForma[p.pagamento] += p.total
-    if (fiadoPago(p)) {
-      fiadoPagoTotal += p.total
-      fiadoPagoPorForma[p.fiadoPagoCom!] += p.total
-    } else if (fiadoAberto(p)) aReceber += p.total
+    if (p.pagamento === 'fiado') {
+      // pagamentos (parciais ou não) contam no dia da venda
+      for (const rec of p.recebimentos) {
+        fiadoPagoTotal += rec.valor
+        fiadoPagoPorForma[rec.forma] += rec.valor
+      }
+      aReceber += faltaDoFiado(p)
+    }
     const valores = valoresPorItem(p)
     p.itens.forEach((it, k) => {
       const acc = porItem.get(it.itemDiaId)
@@ -138,6 +147,8 @@ export interface LinhaVenda {
   pagamento: Pagamento
   fiadoPagoEm: string | null
   fiadoPagoCom: FormaRecebimento | null
+  fiadoPago: number // quanto da venda inteira já foi pago (fiado parcial)
+  totalVenda: number
 }
 
 export interface GrupoProduto {
@@ -171,6 +182,8 @@ export function vendasPorProduto(d: DiaCompleto): GrupoProduto[] {
         pagamento: p.pagamento!,
         fiadoPagoEm: p.fiadoPagoEm,
         fiadoPagoCom: p.fiadoPagoCom,
+        fiadoPago: pagoDoFiado(p),
+        totalVenda: p.total,
       })
     })
   }

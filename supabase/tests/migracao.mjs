@@ -128,3 +128,69 @@ for (const t of ['clientes', 'pedidos', 'pedido_itens', 'dias', 'produtos']) {
 }
 await erro(`set role anon; select salvar_pedido('{}'::jsonb);`, 'sem login não chama salvar_pedido')
 await db.exec('reset role')
+
+// =====================================================================================
+// 0005 · fiado com pagamento parcial
+// =====================================================================================
+const D2 = '00000000-0000-0000-0000-0000000000d2' // aberto, 03/11
+const D3 = '00000000-0000-0000-0000-0000000000d3' // reaberto acima, 28/10 (mais antigo)
+const salvar = async (p) => (await q(`select salvar_pedido($1::jsonb) id`, [JSON.stringify(p)]))[0].id
+const itemD3 = (await q(`select id from itens_dia where dia_id='${D3}' and nome='Empada de frango'`))[0].id
+
+// um fiado quitado do jeito antigo, antes da 0005
+const fAntigo = await salvar({ dia_id: D2, cliente: 'Jonathas', status: 'concluido', pagamento: 'fiado', desconto: 0, itens: [{ item_dia_id: '00000000-0000-0000-0000-0000000000a3', quantidade: 1, preco_unit: 6 }] })
+await db.exec(`update pedidos set fiado_pago_em='2026-11-03', fiado_pago_com='pix' where id='${fAntigo}'`)
+
+const conf5 = (await db.exec(readFileSync(`${dir}/0005_fiado_parcial.sql`, 'utf8'))).at(-1).rows[0]
+console.log('aplicada 0005; conferência:', JSON.stringify(conf5))
+ok(conf5.antes === conf5.depois && conf5.depois >= 1, 'pagamentos antigos copiados como integrais')
+ok((await q(`select valor::float v, forma from fiado_recebimentos where pedido_id='${fAntigo}'`))[0]?.v === 6, 'fiado antigo vira pagamento de R$ 6')
+
+const cJ = (await q(`select id from clientes where nome='Jonathas'`))[0].id
+const p1 = await salvar({ dia_id: D3, cliente: 'jonathas', status: 'concluido', pagamento: 'fiado', desconto: 0, itens: [{ item_dia_id: itemD3, quantidade: 2, preco_unit: 6 }] }) // 12, mais antigo
+const p2 = await salvar({ dia_id: D2, cliente: 'Jonathas', status: 'concluido', pagamento: 'fiado', desconto: 0, itens: [{ item_dia_id: '00000000-0000-0000-0000-0000000000a4', quantidade: 2, preco_unit: 5 }] }) // 10
+const estado = async (id) => (await q(`select fiado_pago_em::text em, fiado_pago_com com, (select coalesce(sum(valor),0)::float from fiado_recebimentos where pedido_id=$1) pago from pedidos where id=$1`, [id]))[0]
+
+const lote1 = (await q(`select receber_fiado($1, 15, 'dinheiro', '2026-11-10') l`, [cJ]))[0].l
+let e1 = await estado(p1), e2 = await estado(p2)
+ok(e1.pago === 12 && e1.em === '2026-11-10' && e1.com === 'dinheiro', 'R$ 15 quita a compra mais antiga (R$ 12)…')
+ok(e2.pago === 3 && e2.em === null, '…e abate R$ 3 da seguinte, que continua devendo')
+
+await erro(`select receber_fiado('${cJ}', 8, 'pix')`, 'recusa receber mais do que falta (falta R$ 7)')
+await erro(`select receber_fiado('${cJ}', 0, 'pix')`, 'recusa valor zero')
+
+const lote2 = (await q(`select receber_fiado($1, 7, 'pix', '2026-11-12') l`, [cJ]))[0].l
+e2 = await estado(p2)
+ok(e2.pago === 10 && e2.em === '2026-11-12' && e2.com === 'pix', 'R$ 7 completa e quita a segunda compra')
+
+await db.exec(`select desfazer_recebimento('${lote2}')`)
+e2 = await estado(p2)
+ok(e2.pago === 3 && e2.em === null, 'desfazer o pagamento volta a dever')
+
+await db.exec(`select trocar_forma_recebimento('${lote1}', 'cartao')`)
+ok((await estado(p1)).com === 'cartao', 'trocar a forma do pagamento atualiza a compra quitada')
+
+await erro(`select salvar_pedido('${JSON.stringify({ id: p2, dia_id: D2, cliente: 'Jonathas', status: 'concluido', pagamento: 'fiado', desconto: 8, itens: [{ item_dia_id: '00000000-0000-0000-0000-0000000000a4', quantidade: 2, preco_unit: 5 }] })}'::jsonb)`, 'venda não pode ficar menor que o já pago')
+await erro(`select salvar_pedido('${JSON.stringify({ id: p2, dia_id: D2, cliente: 'Jonathas', status: 'concluido', pagamento: 'pix', desconto: 0, itens: [{ item_dia_id: '00000000-0000-0000-0000-0000000000a4', quantidade: 2, preco_unit: 5 }] })}'::jsonb)`, 'fiado com pagamento não troca de forma')
+await salvar({ id: p2, dia_id: D2, cliente: 'Jonathas', status: 'concluido', pagamento: 'fiado', desconto: 0, itens: [{ item_dia_id: '00000000-0000-0000-0000-0000000000a4', quantidade: 1, preco_unit: 5 }] })
+e2 = await estado(p2)
+ok(e2.pago === 3 && e2.em === null, 'editar a venda para R$ 5 mantém o pago (R$ 3) e continua devendo')
+
+await q(`select receber_fiado($1, 2, 'pix', null, array[$2]::uuid[])`, [cJ, p2])
+ok((await estado(p2)).em !== null, 'receber só de uma compra escolhida')
+
+// fiado em dia fechado ainda aceita pagamento
+await db.exec(`update dias set status='fechado', sem_gasto=true where id='${D3}'`)
+await db.exec(`select desfazer_recebimento('${lote1}')`)
+ok((await estado(p1)).em === null, 'dia fechado aceita desfazer/registrar pagamento de fiado')
+await q(`select receber_fiado($1, 12, 'pix')`, [cJ])
+ok((await estado(p1)).em !== null, 'dia fechado aceita receber fiado')
+
+await db.exec(`update dias set status='aberto' where id='${D2}'`)
+await db.exec(`delete from pedidos where id='${p2}'`)
+ok((await q(`select count(*)::int n from fiado_recebimentos where pedido_id='${p2}'`))[0].n === 0, 'desfazer a venda apaga os pagamentos dela')
+
+await erro(`set role anon; select * from fiado_recebimentos;`, 'sem login não lê pagamentos')
+await db.exec('reset role')
+await erro(`set role anon; select receber_fiado('${cJ}', 1, 'pix');`, 'sem login não recebe fiado')
+await db.exec('reset role')

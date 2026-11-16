@@ -83,10 +83,19 @@ export interface Pedido {
   desconto: number // negativo = acréscimo
   total: number // valor cobrado
   observacao: string | null
-  fiadoPagoEm: string | null
-  fiadoPagoCom: FormaRecebimento | null
+  fiadoPagoEm: string | null // data em que ficou quitado
+  fiadoPagoCom: FormaRecebimento | null // forma do último pagamento que quitou
+  recebimentos: Recebimento[] // pagamentos do fiado (podem ser parciais)
   criadoEm: string
   itens: PedidoItem[]
+}
+
+/** Parte de um pagamento de fiado que abateu esta venda. */
+export interface Recebimento {
+  lote: string // um pagamento do cliente pode abater várias vendas
+  valor: number
+  forma: FormaRecebimento
+  data: string
 }
 
 export interface DiaCompleto {

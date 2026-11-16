@@ -12,8 +12,11 @@ export function mensagemErro(e: unknown): string {
   const msg = err?.message ?? ''
   if (typeof navigator !== 'undefined' && !navigator.onLine) return 'Sem conexão com a internet. Nada foi salvo.'
   if (msg.includes('Failed to fetch')) return 'Não foi possível falar com o servidor. Nada foi salvo.'
-  if (err?.code === '42P01' || err?.code === 'PGRST205' || err?.code === 'PGRST202' || (err?.code === '42703' && msg.includes('pedidos')))
-    return 'O banco ainda não foi atualizado. Rode o arquivo 0004_reestruturacao.sql no SQL Editor do Supabase.'
+  // tabela/função/relação que ainda não existe no banco
+  if (['42P01', 'PGRST200', 'PGRST202', 'PGRST205'].includes(err?.code ?? '') || (err?.code === '42703' && msg.includes('pedidos')))
+    return msg.includes('fiado_recebimentos') || msg.includes('receber_fiado')
+      ? 'O banco ainda não tem o fiado parcial. Rode o arquivo 0005_fiado_parcial.sql no SQL Editor do Supabase.'
+      : 'O banco ainda não foi atualizado. Rode o arquivo 0004_reestruturacao.sql no SQL Editor do Supabase.'
   if (err?.code === '23505') {
     if (msg.includes('produtos')) return 'Já existe um produto com esse nome.'
     if (msg.includes('clientes')) return 'Já existe um cliente com esse nome.'
@@ -71,6 +74,7 @@ const paraPedido = (p: Linha): Pedido => ({
   observacao: p.observacao ?? null,
   fiadoPagoEm: p.fiado_pago_em ?? null,
   fiadoPagoCom: p.fiado_pago_com ?? null,
+  recebimentos: (p.fiado_recebimentos ?? []).map((r: Linha) => ({ lote: r.lote, valor: deBanco(r.valor), forma: r.forma, data: r.data })),
   criadoEm: p.criado_em,
   itens: (p.pedido_itens ?? []).map((i: Linha) => ({
     id: i.id,
@@ -94,7 +98,7 @@ const paraProduto = (p: Linha): Produto => ({
 
 const SELECT_DIA = `id, data, status, gasto, sem_gasto, fechado_em,
   itens_dia(id, produto_id, nome, produzido, preco, produtos(unidade)),
-  pedidos(*, clientes(nome), pedido_itens(id, item_dia_id, quantidade, preco_unit, subtotal))`
+  pedidos(*, clientes(nome), pedido_itens(id, item_dia_id, quantidade, preco_unit, subtotal), fiado_recebimentos(lote, valor, forma, data))`
 
 function paraDiaCompleto(d: Linha): DiaCompleto {
   return {
@@ -141,7 +145,7 @@ export async function listarHistorico(limite = 180): Promise<DiaHistorico[]> {
   const dias = ok(
     await supabase
       .from('dias')
-      .select('id, data, status, gasto, sem_gasto, fechado_em, pedidos(total, status, pagamento, fiado_pago_em)')
+      .select('id, data, status, gasto, sem_gasto, fechado_em, pedidos(total, status, pagamento, fiado_recebimentos(valor))')
       .order('data', { ascending: false })
       .limit(limite),
   )
@@ -149,7 +153,7 @@ export async function listarHistorico(limite = 180): Promise<DiaHistorico[]> {
     const dia = paraDia(d)
     const concluidos = (d.pedidos as Linha[]).filter((p) => p.status === 'concluido')
     const faturamento = concluidos.reduce((s, p) => s + deBanco(p.total), 0)
-    const aReceber = concluidos.filter((p) => p.pagamento === 'fiado' && !p.fiado_pago_em).reduce((s, p) => s + deBanco(p.total), 0)
+    const aReceber = concluidos.filter((p) => p.pagamento === 'fiado').reduce((s, p) => s + Math.max(0, deBanco(p.total) - somaRecebida(p.fiado_recebimentos)), 0)
     return {
       dia,
       vendas: concluidos.length,
@@ -255,7 +259,7 @@ export async function salvarPedido(p: PedidoParaSalvar): Promise<string> {
 }
 
 export async function carregarPedido(id: string): Promise<Pedido | null> {
-  const p = okTalvez(await supabase.from('pedidos').select('*, clientes(nome), pedido_itens(id, item_dia_id, quantidade, preco_unit, subtotal)').eq('id', id).maybeSingle())
+  const p = okTalvez(await supabase.from('pedidos').select('*, clientes(nome), pedido_itens(id, item_dia_id, quantidade, preco_unit, subtotal), fiado_recebimentos(lote, valor, forma, data)').eq('id', id).maybeSingle())
   return p ? paraPedido(p) : null
 }
 
@@ -273,50 +277,102 @@ export interface Fiado {
   clienteId: string
   cliente: string
   itens: string // "2× Empada de frango, 1× Pudim"
+  valor: number // total da venda
+  pago: number // quanto já foi pago (pode ser parcial)
+  falta: number
+}
+
+/** Um pagamento do cliente (pode ter abatido várias vendas). */
+export interface PagamentoFiado {
+  lote: string
+  clienteId: string
+  cliente: string
   valor: number
-  pagoEm: string | null
-  pagoCom: FormaRecebimento | null
+  forma: FormaRecebimento
+  data: string
+  vendas: { pedidoId: string; data: string; itens: string; valor: number }[]
 }
 
 const descreverItens = (lista: Linha[]) => lista.map((i) => `${i.quantidade}× ${i.itens_dia?.nome ?? '—'}`).join(', ')
+const somaRecebida = (lista: Linha[] | undefined) => (lista ?? []).reduce((s, r) => s + deBanco(r.valor), 0)
 
+/** Vendas fiado com quanto já foi pago e quanto falta. */
 export async function listarFiados(): Promise<Fiado[]> {
   const ps = ok(
     await supabase
       .from('pedidos')
-      .select('id, dia_id, total, cliente_id, criado_em, fiado_pago_em, fiado_pago_com, clientes(nome), dias(data), pedido_itens(quantidade, itens_dia(nome))')
+      .select('id, dia_id, total, cliente_id, criado_em, clientes(nome), dias(data), pedido_itens(quantidade, itens_dia(nome)), fiado_recebimentos(valor)')
       .eq('pagamento', 'fiado')
       .eq('status', 'concluido')
       .order('criado_em', { ascending: false })
-      .limit(1000),
+      .limit(2000),
   ) as Linha[]
-  return ps.map((p) => ({
-    pedidoId: p.id,
-    diaId: p.dia_id,
-    data: p.dias?.data ?? p.criado_em.slice(0, 10),
-    clienteId: p.cliente_id,
-    cliente: p.clientes?.nome ?? '—',
-    itens: descreverItens(p.pedido_itens ?? []),
-    valor: deBanco(p.total),
-    pagoEm: p.fiado_pago_em ?? null,
-    pagoCom: p.fiado_pago_com ?? null,
-  }))
+  return ps.map((p) => {
+    const valor = deBanco(p.total)
+    const pago = somaRecebida(p.fiado_recebimentos)
+    return {
+      pedidoId: p.id,
+      diaId: p.dia_id,
+      data: p.dias?.data ?? p.criado_em.slice(0, 10),
+      clienteId: p.cliente_id,
+      cliente: p.clientes?.nome ?? '—',
+      itens: descreverItens(p.pedido_itens ?? []),
+      valor,
+      pago,
+      falta: Math.max(0, valor - pago),
+    }
+  })
 }
 
-/** Registra o pagamento de um ou mais fiados (aparece no resumo do dia de cada venda). */
-export async function receberFiados(pedidoIds: string[], forma: FormaRecebimento, data = hojeBelem()) {
-  const r = ok(
-    await supabase.from('pedidos').update({ fiado_pago_em: data, fiado_pago_com: forma }).in('id', pedidoIds).eq('pagamento', 'fiado').select('id'),
+/** Pagamentos de fiado recebidos, do mais recente para o mais antigo (agrupados por pagamento). */
+export async function listarPagamentosFiado(limite = 300): Promise<PagamentoFiado[]> {
+  const rs = ok(
+    await supabase
+      .from('fiado_recebimentos')
+      .select('lote, valor, forma, data, criado_em, cliente_id, clientes(nome), pedidos(id, total, dias(data), pedido_itens(quantidade, itens_dia(nome)))')
+      .order('criado_em', { ascending: false })
+      .limit(limite),
+  ) as Linha[]
+  const lotes = new Map<string, PagamentoFiado>()
+  for (const r of rs) {
+    const l: PagamentoFiado = lotes.get(r.lote) ?? {
+      lote: r.lote,
+      clienteId: r.cliente_id,
+      cliente: r.clientes?.nome ?? '—',
+      valor: 0,
+      forma: r.forma,
+      data: r.data,
+      vendas: [],
+    }
+    l.valor += deBanco(r.valor)
+    l.vendas.push({ pedidoId: r.pedidos?.id, data: r.pedidos?.dias?.data ?? r.data, itens: descreverItens(r.pedidos?.pedido_itens ?? []), valor: deBanco(r.valor) })
+    lotes.set(r.lote, l)
+  }
+  return [...lotes.values()]
+}
+
+/**
+ * Recebe um valor do cliente (total ou parcial). Abate das vendas fiado em aberto, da mais antiga
+ * para a mais nova; `pedidoIds` limita a essas vendas. O banco recusa valor maior que a dívida.
+ */
+export async function receberFiado(clienteId: string, valor: number, forma: FormaRecebimento, pedidoIds?: string[], data = hojeBelem()) {
+  ok(
+    await supabase.rpc('receber_fiado', {
+      p_cliente: clienteId,
+      p_valor: paraBanco(valor),
+      p_forma: forma,
+      p_data: data,
+      p_pedidos: pedidoIds?.length ? pedidoIds : null,
+    }),
   )
-  if (r.length !== pedidoIds.length) throw new Error('Alguns fiados não foram encontrados. Atualize a tela.')
 }
 
-export async function desfazerRecebimento(pedidoId: string) {
-  ok(await supabase.from('pedidos').update({ fiado_pago_em: null, fiado_pago_com: null }).eq('id', pedidoId).select('id'))
+export async function desfazerRecebimento(lote: string) {
+  okTalvez(await supabase.rpc('desfazer_recebimento', { p_lote: lote }))
 }
 
-export async function trocarFormaRecebimento(pedidoId: string, forma: FormaRecebimento) {
-  ok(await supabase.from('pedidos').update({ fiado_pago_com: forma }).eq('id', pedidoId).not('fiado_pago_em', 'is', null).select('id'))
+export async function trocarFormaRecebimento(lote: string, forma: FormaRecebimento) {
+  okTalvez(await supabase.rpc('trocar_forma_recebimento', { p_lote: lote, p_forma: forma }))
 }
 
 // ---------------------------------------------------------------- produtos
@@ -363,7 +419,7 @@ export interface ResumoCliente extends Cliente {
 
 export async function listarClientes(): Promise<ResumoCliente[]> {
   const cs = ok(
-    await supabase.from('clientes').select('id, nome, telefone, pedidos(total, status, pagamento, fiado_pago_em, criado_em)').order('nome'),
+    await supabase.from('clientes').select('id, nome, telefone, pedidos(total, status, pagamento, criado_em, fiado_recebimentos(valor))').order('nome'),
   ) as Linha[]
   return cs
     .map((c) => {
@@ -374,7 +430,7 @@ export async function listarClientes(): Promise<ResumoCliente[]> {
         telefone: c.telefone ?? null,
         compras: ps.length,
         total: ps.reduce((s, p) => s + deBanco(p.total), 0),
-        deve: ps.filter((p) => p.pagamento === 'fiado' && !p.fiado_pago_em).reduce((s, p) => s + deBanco(p.total), 0),
+        deve: ps.filter((p) => p.pagamento === 'fiado').reduce((s, p) => s + Math.max(0, deBanco(p.total) - somaRecebida(p.fiado_recebimentos)), 0),
         ultimaCompra: ps.map((p) => p.criado_em as string).sort().at(-1) ?? null,
       }
     })
@@ -391,13 +447,14 @@ export interface CompraCliente {
   pagamento: Pagamento | null
   fiadoPagoEm: string | null
   fiadoPagoCom: FormaRecebimento | null
+  pago: number // fiado: quanto já foi pago desta compra
 }
 
 export async function carregarCliente(id: string): Promise<{ cliente: Cliente; compras: CompraCliente[] } | null> {
   const c = okTalvez(
     await supabase
       .from('clientes')
-      .select('id, nome, telefone, pedidos(id, dia_id, total, status, pagamento, fiado_pago_em, fiado_pago_com, criado_em, dias(data), pedido_itens(quantidade, itens_dia(nome)))')
+      .select('id, nome, telefone, pedidos(id, dia_id, total, status, pagamento, fiado_pago_em, fiado_pago_com, criado_em, dias(data), pedido_itens(quantidade, itens_dia(nome)), fiado_recebimentos(valor))')
       .eq('id', id)
       .maybeSingle(),
   ) as Linha | null
@@ -413,6 +470,7 @@ export async function carregarCliente(id: string): Promise<{ cliente: Cliente; c
       pagamento: p.pagamento ?? null,
       fiadoPagoEm: p.fiado_pago_em ?? null,
       fiadoPagoCom: p.fiado_pago_com ?? null,
+      pago: p.pagamento === 'fiado' ? somaRecebida(p.fiado_recebimentos) : 0,
     }))
     .sort((a, b) => b.data.localeCompare(a.data))
   return { cliente: { id: c.id, nome: c.nome, telefone: c.telefone ?? null }, compras }

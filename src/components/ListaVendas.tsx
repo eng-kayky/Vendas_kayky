@@ -3,15 +3,27 @@ import { Link } from 'react-router-dom'
 import { excluirPedido, mensagemErro } from '../lib/api'
 import { hora } from '../lib/datas'
 import { reais } from '../lib/dinheiro'
+import { pagoDoFiado } from '../lib/calculos'
 import { ROTULO_PAGAMENTO, type DiaCompleto, type Pedido } from '../lib/tipos'
 import { useOnline } from '../hooks'
 import { Aviso, Confirmar, Icone, Selo } from './ui'
 
 /** Etiqueta da forma de pagamento; no fiado mostra se já foi pago. */
-export function SeloPagamento({ p }: { p: Pick<Pedido, 'pagamento' | 'fiadoPagoEm' | 'fiadoPagoCom' | 'status'> }) {
+export function SeloPagamento({
+  p,
+  pago = 0,
+  total = 0,
+}: {
+  p: Pick<Pedido, 'pagamento' | 'fiadoPagoEm' | 'fiadoPagoCom' | 'status'>
+  pago?: number // fiado: quanto já foi pago (parcial)
+  total?: number
+}) {
   if (p.status === 'reservado') return <Selo cor="claro">Reservado</Selo>
-  if (p.pagamento === 'fiado')
-    return p.fiadoPagoEm ? <Selo cor="positivo">Fiado pago · {ROTULO_PAGAMENTO[p.fiadoPagoCom!]}</Selo> : <Selo cor="alerta">Fiado · a receber</Selo>
+  if (p.pagamento === 'fiado') {
+    if (p.fiadoPagoEm) return <Selo cor="positivo">Fiado pago · {ROTULO_PAGAMENTO[p.fiadoPagoCom!]}</Selo>
+    if (pago > 0) return <Selo cor="alerta">Fiado · pagou {reais(pago)}{total ? ` de ${reais(total)}` : ''}</Selo>
+    return <Selo cor="alerta">Fiado · a receber</Selo>
+  }
   return <Selo>{p.pagamento ? ROTULO_PAGAMENTO[p.pagamento] : '—'}</Selo>
 }
 
@@ -70,7 +82,7 @@ export default function ListaVendas({ d, aberto, onMudou }: { d: DiaCompleto; ab
                 {hora(p.criadoEm)} · {descreverPedido(p, d)}
               </p>
               <div className="mt-1 flex flex-wrap items-center gap-2">
-                <SeloPagamento p={p} />
+                <SeloPagamento p={p} pago={pagoDoFiado(p)} total={p.total} />
                 {p.desconto !== 0 && (
                   <span className={`text-xs ${p.desconto > 0 ? 'text-alerta' : 'text-positivo'}`}>
                     {p.desconto > 0 ? `desconto ${reais(p.desconto)}` : `acréscimo ${reais(-p.desconto)}`}
@@ -118,7 +130,7 @@ export default function ListaVendas({ d, aberto, onMudou }: { d: DiaCompleto; ab
           <>
             {descreverPedido(alvo, d)} · {reais(alvo.total)}
             {alvo.cliente ? ` (${alvo.cliente})` : ''}, às {hora(alvo.criadoEm)}. As unidades voltam para o estoque.
-            {alvo.fiadoPagoEm && ' O pagamento do fiado também é apagado.'}
+            {pagoDoFiado(alvo) > 0 && ` Os pagamentos do fiado (${reais(pagoDoFiado(alvo))}) também são apagados.`}
           </>
         )}
       </Confirmar>
