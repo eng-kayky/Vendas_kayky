@@ -331,7 +331,7 @@ function DiaFechado({ d, r, ehHoje, onMudou }: { d: DiaCompleto; r: ResumoDia; e
                 </ul>
               </Secao>
             ))}
-            <DetalheVenda venda={vendaVer ? detalheDoDia(vendaVer, d) : null} onFechar={() => setVer(null)} />
+            <DetalheVenda venda={vendaVer ? detalheDoDia(vendaVer, d) : null} onFechar={() => setVer(null)} onSalvo={onMudou} />
             <ExcluirDia diaId={d.dia.id} data={d.dia.data} vendas={r.vendas} />
           </>
         }

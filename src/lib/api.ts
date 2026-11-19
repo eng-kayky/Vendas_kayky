@@ -14,7 +14,9 @@ export function mensagemErro(e: unknown): string {
   if (msg.includes('Failed to fetch')) return 'Não foi possível falar com o servidor. Nada foi salvo.'
   // tabela/função/relação que ainda não existe no banco
   if (['42P01', 'PGRST200', 'PGRST202', 'PGRST205'].includes(err?.code ?? '') || (err?.code === '42703' && msg.includes('pedidos')))
-    return msg.includes('fiado_recebimentos') || msg.includes('receber_fiado')
+    return msg.includes('editar_venda')
+      ? 'O banco ainda não tem a edição rápida de venda. Rode o arquivo 0006_editar_venda.sql no SQL Editor do Supabase.'
+      : msg.includes('fiado_recebimentos') || msg.includes('receber_fiado')
       ? 'O banco ainda não tem o fiado parcial. Rode o arquivo 0005_fiado_parcial.sql no SQL Editor do Supabase.'
       : 'O banco ainda não foi atualizado. Rode o arquivo 0004_reestruturacao.sql no SQL Editor do Supabase.'
   if (err?.code === '23505') {
@@ -267,7 +269,7 @@ export async function carregarPedido(id: string): Promise<Pedido | null> {
 export interface VendaDetalhe {
   pedido: Pedido
   data: string // dia da venda
-  linhas: { id: string; nome: string; unidade: string; quantidade: number; precoUnit: number; subtotal: number }[]
+  linhas: { id: string; itemDiaId: string; nome: string; unidade: string; quantidade: number; precoUnit: number; subtotal: number }[]
 }
 
 export async function carregarVendaDetalhe(id: string): Promise<VendaDetalhe | null> {
@@ -284,6 +286,7 @@ export async function carregarVendaDetalhe(id: string): Promise<VendaDetalhe | n
     data: p.dias?.data ?? p.criado_em.slice(0, 10),
     linhas: (p.pedido_itens ?? []).map((i: Linha) => ({
       id: i.id,
+      itemDiaId: i.item_dia_id,
       nome: i.itens_dia?.nome ?? '—',
       unidade: i.itens_dia?.produtos?.unidade ?? 'un',
       quantidade: i.quantidade,
@@ -291,6 +294,17 @@ export async function carregarVendaDetalhe(id: string): Promise<VendaDetalhe | n
       subtotal: deBanco(i.subtotal),
     })),
   }
+}
+
+/** Corrige quantidades, preços e desconto de uma venda, mesmo com o dia fechado. Devolve o novo total. */
+export async function editarVenda(pedidoId: string, itens: { itemDiaId: string; quantidade: number; precoUnit: number }[], desconto: number) {
+  const r = await supabase.rpc('editar_venda', {
+    p_pedido: pedidoId,
+    p_itens: itens.map((i) => ({ item_dia_id: i.itemDiaId, quantidade: i.quantidade, preco_unit: paraBanco(i.precoUnit) })),
+    p_desconto: paraBanco(desconto),
+  })
+  if (r.error) throw r.error
+  return deBanco(r.data as number)
 }
 
 export async function excluirPedido(id: string) {

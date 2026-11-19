@@ -229,7 +229,7 @@ export default function Fiado() {
         </div>
       )}
 
-      <DetalheVenda pedidoId={ver?.pedidoId} diaId={ver?.diaId} onFechar={() => setVer(null)} />
+      <DetalheVenda pedidoId={ver?.pedidoId} diaId={ver?.diaId} onFechar={() => setVer(null)} onSalvo={recarregar} />
 
       <ReceberFiado alvo={receber} onFechar={() => setReceber(null)} onRecebido={recarregar} />
 

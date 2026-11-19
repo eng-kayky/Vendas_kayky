@@ -194,3 +194,23 @@ await erro(`set role anon; select * from fiado_recebimentos;`, 'sem login não l
 await db.exec('reset role')
 await erro(`set role anon; select receber_fiado('${cJ}', 1, 'pix');`, 'sem login não recebe fiado')
 await db.exec('reset role')
+
+// ---------------------------------------------------------------- 0006: editar venda sem reabrir o dia
+console.log((await db.exec(readFileSync(`${dir}/0006_editar_venda.sql`, 'utf8'))).at(-1).rows[0])
+const editar = (id, itens, desc = 0) => q(`select editar_venda($1, $2::jsonb, $3)::float t`, [id, JSON.stringify(itens), desc])
+ok((await q(`select status from dias where id='${D3}'`))[0].status === 'fechado', 'dia D3 está fechado')
+const t1 = (await editar(p1, [{ item_dia_id: itemD3, quantidade: 2, preco_unit: 7 }]))[0].t
+let e3 = await estado(p1)
+ok(t1 === 14 && e3.pago === 12 && e3.em === null, 'dia fechado: venda passa de R$ 12 para R$ 14 e volta a dever R$ 2')
+ok((await q(`select sum(subtotal)::float s from pedido_itens where pedido_id='${p1}'`))[0].s === 14, 'itens da venda atualizados')
+ok((await q(`select status from dias where id='${D3}'`))[0].status === 'fechado', 'o dia continua fechado')
+await editar(p1, [{ item_dia_id: itemD3, quantidade: 2, preco_unit: 7 }], 2)
+e3 = await estado(p1)
+ok(e3.em !== null, 'desconto de R$ 2 deixa em R$ 12 = pago, quitado de novo')
+await erro(`select editar_venda('${p1}', '[{"item_dia_id":"${itemD3}","quantidade":1,"preco_unit":6}]'::jsonb, 0)`, 'não deixa ficar menor que o já pago')
+await erro(`select editar_venda('${p1}', '[{"item_dia_id":"00000000-0000-0000-0000-0000000000a4","quantidade":1,"preco_unit":20}]'::jsonb, 0)`, 'recusa produto de outro dia')
+await erro(`select editar_venda('${p1}', '[]'::jsonb, 0)`, 'recusa venda sem produto')
+await erro(`select editar_venda('${p1}', '[{"item_dia_id":"${itemD3}","quantidade":0,"preco_unit":6}]'::jsonb, 0)`, 'recusa quantidade zero')
+await erro(`update pedidos set desconto = 0 where id = '${p1}'`, 'fora do editar_venda o dia fechado continua travado')
+await erro(`set role anon; select editar_venda('${p1}', '[{"item_dia_id":"${itemD3}","quantidade":2,"preco_unit":6}]'::jsonb, 0);`, 'sem login não edita')
+await db.exec('reset role')

@@ -153,7 +153,7 @@ export default function ClienteFicha() {
         </ul>
       )}
 
-      <DetalheVenda pedidoId={ver?.pedidoId} diaId={ver?.diaId} onFechar={() => setVer(null)} />
+      <DetalheVenda pedidoId={ver?.pedidoId} diaId={ver?.diaId} onFechar={() => setVer(null)} onSalvo={recarregar} />
 
       <ReceberFiado
         alvo={receber ? { clienteId: cliente.id, cliente: cliente.nome, falta: deve, vendas: devendo } : null}

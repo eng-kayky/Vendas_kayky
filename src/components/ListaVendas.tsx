@@ -119,7 +119,7 @@ export default function ListaVendas({ d, aberto, onMudou }: { d: DiaCompleto; ab
         ))}
       </ul>
 
-      <DetalheVenda venda={ver ? detalheDoDia(ver, d) : null} onFechar={() => setVer(null)} />
+      <DetalheVenda venda={ver ? detalheDoDia(ver, d) : null} onFechar={() => setVer(null)} onSalvo={onMudou} />
 
       <Confirmar
         aberto={alvo !== null}
