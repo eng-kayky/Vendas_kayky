@@ -7,6 +7,7 @@ import { pagoDoFiado } from '../lib/calculos'
 import { ROTULO_PAGAMENTO, type DiaCompleto, type Pedido } from '../lib/tipos'
 import { useOnline } from '../hooks'
 import { Aviso, Confirmar, Icone, Selo } from './ui'
+import DetalheVenda, { detalheDoDia } from './DetalheVenda'
 
 /** Etiqueta da forma de pagamento; no fiado mostra se já foi pago. */
 export function SeloPagamento({
@@ -42,6 +43,7 @@ export function descreverPedido(p: Pedido, d: Pick<DiaCompleto, 'itens'>) {
 export default function ListaVendas({ d, aberto, onMudou }: { d: DiaCompleto; aberto: boolean; onMudou: () => void }) {
   const online = useOnline()
   const [alvo, setAlvo] = useState<Pedido | null>(null)
+  const [ver, setVer] = useState<Pedido | null>(null)
   const [ocupado, setOcupado] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const vendas = d.pedidos.filter((p) => p.status === 'concluido')
@@ -73,7 +75,7 @@ export default function ListaVendas({ d, aberto, onMudou }: { d: DiaCompleto; ab
       <ul className="divide-y divide-borda/60">
         {vendas.map((p) => (
           <li key={p.id} className="num flex items-center gap-2 py-2.5">
-            <div className="min-w-0 flex-1">
+            <button type="button" onClick={() => setVer(p)} className="min-w-0 flex-1 rounded-xl text-left hover:bg-borda/20" title="Ver o que comprou">
               <div className="flex items-baseline justify-between gap-3">
                 <span className="truncate font-semibold">{p.cliente ?? 'Sem nome'}</span>
                 <span className="shrink-0 font-bold">{reais(p.total)}</span>
@@ -90,7 +92,7 @@ export default function ListaVendas({ d, aberto, onMudou }: { d: DiaCompleto; ab
                 )}
                 {p.observacao && <span className="truncate text-xs text-sec">“{p.observacao}”</span>}
               </div>
-            </div>
+            </button>
             {aberto && (
               <div className="flex shrink-0">
                 <Link
@@ -116,6 +118,8 @@ export default function ListaVendas({ d, aberto, onMudou }: { d: DiaCompleto; ab
           </li>
         ))}
       </ul>
+
+      <DetalheVenda venda={ver ? detalheDoDia(ver, d) : null} onFechar={() => setVer(null)} />
 
       <Confirmar
         aberto={alvo !== null}

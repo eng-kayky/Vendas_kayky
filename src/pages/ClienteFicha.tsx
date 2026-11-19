@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { carregarCliente, mensagemErro, salvarCliente } from '../lib/api'
+import { useParams } from 'react-router-dom'
+import { carregarCliente, mensagemErro, salvarCliente, type CompraCliente } from '../lib/api'
 import { dataCurta, diaDaSemana } from '../lib/datas'
 import { reais } from '../lib/dinheiro'
 import { useCarregar, useOnline } from '../hooks'
 import { SeloPagamento } from '../components/ListaVendas'
 import ReceberFiado from '../components/ReceberFiado'
+import DetalheVenda from '../components/DetalheVenda'
 import { Aviso, Campo, Carregando, Icone, Pagina, Topo, Vazio } from '../components/ui'
 
 /** Ficha do cliente: tudo que comprou, quanto deve, editar nome e telefone. */
@@ -17,6 +18,7 @@ export default function ClienteFicha() {
   const [receber, setReceber] = useState(false)
   const [ocupado, setOcupado] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  const [ver, setVer] = useState<CompraCliente | null>(null)
 
   if (carregando && !dados) return <Pagina comNav><Topo titulo="Cliente" voltar="/clientes" /><Carregando /></Pagina>
   if (!dados) return <Pagina comNav><Topo titulo="Cliente" voltar="/clientes" /><Aviso>{erroCarga ?? 'Cliente não encontrado.'}</Aviso></Pagina>
@@ -130,7 +132,7 @@ export default function ClienteFicha() {
         <ul className="num cartao divide-y divide-borda/60">
           {compras.map((c) => (
             <li key={c.pedidoId}>
-              <Link to={`/dia/${c.diaId}`} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-borda/30">
+              <button type="button" onClick={() => setVer(c)} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-borda/30" title="Ver o que comprou">
                 <div className="min-w-0">
                   <p className="truncate">{c.itens}</p>
                   <p className="text-sm text-sec">
@@ -145,11 +147,13 @@ export default function ClienteFicha() {
                     <SeloPagamento p={c} />
                   )}
                 </div>
-              </Link>
+              </button>
             </li>
           ))}
         </ul>
       )}
+
+      <DetalheVenda pedidoId={ver?.pedidoId} diaId={ver?.diaId} onFechar={() => setVer(null)} />
 
       <ReceberFiado
         alvo={receber ? { clienteId: cliente.id, cliente: cliente.nome, falta: deve, vendas: devendo } : null}

@@ -263,6 +263,36 @@ export async function carregarPedido(id: string): Promise<Pedido | null> {
   return p ? paraPedido(p) : null
 }
 
+/** Uma venda com o nome de cada produto, para ver tudo o que a pessoa levou. */
+export interface VendaDetalhe {
+  pedido: Pedido
+  data: string // dia da venda
+  linhas: { id: string; nome: string; unidade: string; quantidade: number; precoUnit: number; subtotal: number }[]
+}
+
+export async function carregarVendaDetalhe(id: string): Promise<VendaDetalhe | null> {
+  const p = okTalvez(
+    await supabase
+      .from('pedidos')
+      .select('*, clientes(nome), dias(data), pedido_itens(id, item_dia_id, quantidade, preco_unit, subtotal, itens_dia(nome, produtos(unidade))), fiado_recebimentos(lote, valor, forma, data)')
+      .eq('id', id)
+      .maybeSingle(),
+  )
+  if (!p) return null
+  return {
+    pedido: paraPedido(p),
+    data: p.dias?.data ?? p.criado_em.slice(0, 10),
+    linhas: (p.pedido_itens ?? []).map((i: Linha) => ({
+      id: i.id,
+      nome: i.itens_dia?.nome ?? '—',
+      unidade: i.itens_dia?.produtos?.unidade ?? 'un',
+      quantidade: i.quantidade,
+      precoUnit: deBanco(i.preco_unit),
+      subtotal: deBanco(i.subtotal),
+    })),
+  }
+}
+
 export async function excluirPedido(id: string) {
   const r = ok(await supabase.from('pedidos').delete().eq('id', id).select('id'))
   if (!r.length) throw new Error('A venda não foi encontrada (talvez já tenha sido desfeita).')

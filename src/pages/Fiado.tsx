@@ -14,6 +14,7 @@ import { reais } from '../lib/dinheiro'
 import { FORMAS_RECEBIMENTO, ROTULO_PAGAMENTO, type FormaRecebimento } from '../lib/tipos'
 import { useCarregar, useOnline } from '../hooks'
 import ReceberFiado, { type AlvoRecebimento } from '../components/ReceberFiado'
+import DetalheVenda from '../components/DetalheVenda'
 import { Aviso, Barra, Carregando, Confirmar, Escolha, Icone, Pagina, Selo, TituloSecao, Vazio } from '../components/ui'
 
 interface Devedor {
@@ -37,6 +38,7 @@ export default function Fiado() {
   const [trocar, setTrocar] = useState<PagamentoFiado | null>(null)
   const [desfazer, setDesfazer] = useState<PagamentoFiado | null>(null)
   const [forma, setForma] = useState<FormaRecebimento>('pix')
+  const [ver, setVer] = useState<{ pedidoId: string; diaId?: string } | null>(null)
   const [ocupado, setOcupado] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
 
@@ -140,7 +142,7 @@ export default function Fiado() {
                   <ul className="divide-y divide-borda/60">
                     {g.fiados.map((f) => (
                       <li key={f.pedidoId} className="flex items-center justify-between gap-3 px-4 py-2.5">
-                        <Link to={`/dia/${f.diaId}`} className="min-w-0 flex-1 hover:underline">
+                        <button type="button" onClick={() => setVer({ pedidoId: f.pedidoId, diaId: f.diaId })} className="min-w-0 flex-1 rounded-lg text-left hover:bg-borda/20" title="Ver o que comprou">
                           <p className="truncate">{f.itens}</p>
                           <p className="text-sm text-sec">
                             {diaDaSemana(f.data).split('-')[0]}, {dataCurta(f.data)}
@@ -151,7 +153,8 @@ export default function Fiado() {
                               <Barra valor={f.pago} total={f.valor} />
                             </div>
                           )}
-                        </Link>
+                          <p className="text-xs font-semibold text-destaque">Ver compra</p>
+                        </button>
                         <div className="flex shrink-0 items-center gap-2">
                           <span className="font-bold">{reais(f.falta)}</span>
                           {g.fiados.length > 1 && (
@@ -182,12 +185,12 @@ export default function Fiado() {
                 <ul className="cartao divide-y divide-borda/60">
                   {lista.map((p) => (
                     <li key={p.lote} className="flex items-center justify-between gap-2 px-4 py-3">
-                      <div className="min-w-0">
+                      <button type="button" className="min-w-0 flex-1 rounded-lg text-left hover:bg-borda/20" onClick={() => p.vendas[0]?.pedidoId && setVer({ pedidoId: p.vendas[0].pedidoId })} title="Ver o que comprou">
                         <p className="truncate font-semibold">{p.cliente}</p>
                         <p className="truncate text-sm text-sec">
                           {p.vendas.length === 1 ? `${p.vendas[0].itens} · venda de ${dataCurta(p.vendas[0].data)}` : `abateu ${p.vendas.length} vendas`}
                         </p>
-                      </div>
+                      </button>
                       <div className="flex shrink-0 items-center gap-1">
                         <div className="text-right">
                           <p className="font-bold">{reais(p.valor)}</p>
@@ -225,6 +228,8 @@ export default function Fiado() {
           )}
         </div>
       )}
+
+      <DetalheVenda pedidoId={ver?.pedidoId} diaId={ver?.diaId} onFechar={() => setVer(null)} />
 
       <ReceberFiado alvo={receber} onFechar={() => setReceber(null)} onRecebido={recarregar} />
 

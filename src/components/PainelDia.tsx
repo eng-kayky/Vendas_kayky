@@ -7,6 +7,7 @@ import { estoqueBaixo, fiadoAberto, resumirDia, vendasPorProduto, type LinhaProd
 import { ROTULO_PAGAMENTO, type DiaCompleto } from '../lib/tipos'
 import { useOnline } from '../hooks'
 import ListaVendas, { descreverPedido, SeloPagamento } from './ListaVendas'
+import DetalheVenda, { detalheDoDia } from './DetalheVenda'
 import { Aviso, Barra, Confirmar, Icone, Indicador, Pagina, Rodape, Secao, Selo } from './ui'
 
 /** Painel de um dia: trabalhar (aberto) ou ver o resumo (fechado). Serve para hoje e dias anteriores. */
@@ -254,6 +255,8 @@ function DiaFechado({ d, r, ehHoje, onMudou }: { d: DiaCompleto; r: ResumoDia; e
   const [ocupado, setOcupado] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const grupos = vendasPorProduto(d)
+  const [ver, setVer] = useState<string | null>(null)
+  const vendaVer = d.pedidos.find((p) => p.id === ver) ?? null
 
   async function confirmarReabrir() {
     setOcupado(true)
@@ -313,7 +316,8 @@ function DiaFechado({ d, r, ehHoje, onMudou }: { d: DiaCompleto; r: ResumoDia; e
               <Secao key={g.itemDiaId} titulo={g.produto} acao={<p className="num shrink-0 text-sm text-sec">{g.quantidade} {g.unidade} · <strong className="text-texto">{reais(g.valor)}</strong></p>}>
                 <ul className="num divide-y divide-borda/60">
                   {g.linhas.map((l, i) => (
-                    <li key={`${l.pedidoId}-${i}`} className="flex items-center gap-3 py-2 text-sm">
+                    <li key={`${l.pedidoId}-${i}`}>
+                     <button type="button" onClick={() => setVer(l.pedidoId)} className="flex w-full items-center gap-3 rounded-lg py-2 text-left text-sm hover:bg-borda/20" title="Ver o que comprou">
                       <span className="w-11 shrink-0 text-sec">{hora(l.hora)}</span>
                       <span className="min-w-0 flex-1 truncate font-semibold">{l.cliente ?? 'Sem nome'}</span>
                       <span className="shrink-0 text-sec">{l.quantidade}×</span>
@@ -321,11 +325,13 @@ function DiaFechado({ d, r, ehHoje, onMudou }: { d: DiaCompleto; r: ResumoDia; e
                       <span className="hidden w-36 shrink-0 text-right sm:block">
                         <SeloPagamento p={{ status: 'concluido', pagamento: l.pagamento, fiadoPagoEm: l.fiadoPagoEm, fiadoPagoCom: l.fiadoPagoCom }} pago={l.fiadoPago} total={l.totalVenda} />
                       </span>
+                     </button>
                     </li>
                   ))}
                 </ul>
               </Secao>
             ))}
+            <DetalheVenda venda={vendaVer ? detalheDoDia(vendaVer, d) : null} onFechar={() => setVer(null)} />
             <ExcluirDia diaId={d.dia.id} data={d.dia.data} vendas={r.vendas} />
           </>
         }
